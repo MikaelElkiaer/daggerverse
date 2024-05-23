@@ -6,9 +6,17 @@ import (
 	"time"
 )
 
-type Testing struct{}
+type Testing struct {
+	Main *MikaelElkiaer
+}
 
-//go:embed interrupt.sh
+func (m *MikaelElkiaer) Testing(
+	ctx context.Context,
+) *Testing {
+	return &Testing{Main: m}
+}
+
+//go:embed assets/interrupt.sh
 var interrupt__sh string
 
 func (m *Testing) Interrupt(

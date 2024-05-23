@@ -1,6 +1,0 @@
-{
-  "name": "helm",
-  "sdk": "go",
-  "source": ".",
-  "engineVersion": "v0.11.4"
-}

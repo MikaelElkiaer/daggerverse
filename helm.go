@@ -9,28 +9,13 @@ import (
 var workDir = "/src"
 
 type Helm struct {
-	GithubToken    *Secret
-	GithubUsername string
-	AdditionalCAs  []string
+	Main *MikaelElkiaer
 }
 
-func New(
-	// +optional
-	// Additional CA certs to add to the running container
-	additionalCAs []string,
-	// +optional
-	// Github token to use for OCI registry login
-	githubToken *Secret,
-	// +default="gh"
-	// +optional
-	// Github username to use for OCI registry login
-	githubUsername string,
+func (m *MikaelElkiaer) Helm(
+	ctx context.Context,
 ) *Helm {
-	return &Helm{
-		AdditionalCAs:  additionalCAs,
-		GithubToken:    githubToken,
-		GithubUsername: githubUsername,
-	}
+	return &Helm{Main: m}
 }
 
 type HelmPackage struct {
@@ -180,8 +165,8 @@ func (m *Helm) base() *Container {
 		WithExec([]string{"npm", "install", "-g", "@socialgouv/helm-schema"}).
 		WithExec([]string{"helm", "plugin", "install", "https://github.com/helm-unittest/helm-unittest.git"})
 
-	if len(m.AdditionalCAs) > 0 {
-		for _, ca := range m.AdditionalCAs {
+	if len(m.Main.AdditionalCAs) > 0 {
+		for _, ca := range m.Main.AdditionalCAs {
 			c = c.
 				WithWorkdir("/usr/local/share/ca-certificates/").
 				WithExec([]string{"wget", ca})
@@ -189,10 +174,10 @@ func (m *Helm) base() *Container {
 		c = c.WithExec([]string{"update-ca-certificates"})
 	}
 
-	if m.GithubToken != nil {
+	if m.Main.GithubToken != nil {
 		c = c.
-			WithSecretVariable("GH_TOKEN", m.GithubToken).
-			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | helm registry login --username %s --password-stdin ghcr.io", m.GithubUsername)}).
+			WithSecretVariable("GH_TOKEN", m.Main.GithubToken).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | helm registry login --username %s --password-stdin ghcr.io", m.Main.GithubUsername)}).
 			WithoutSecretVariable("GH_TOKEN")
 	}
 

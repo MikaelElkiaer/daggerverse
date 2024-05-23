@@ -1,4 +1,5 @@
 {
-  "name": "daggerverse",
+  "name": "MikaelElkiaer",
+  "sdk": "go",
   "engineVersion": "v0.11.4"
 }
