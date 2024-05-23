@@ -93,11 +93,30 @@ func (m *Helm) Build(
 		}
 	}
 
-	file := c.WithExec([]string{"helm", "package", "."}).
-		WithExec([]string{"sh", "-c", "mv *.tgz package.tgz"}).
-		File("package.tgz")
+	c = c.WithExec([]string{"sh", "-c", "rm -f *.tgz"}).
+		WithExec([]string{"helm", "package", "."}).
+		WithExec([]string{"sh", "-c", "mv *.tgz package.tgz"})
 
-	return &HelmPackage{Container: c, Output: file}, nil
+	return &HelmPackage{Container: c}, nil
+}
+
+func (hp *HelmPackage) Directory(
+	ctx context.Context,
+	// +default=["Chart.lock", "Chart.yaml", "package.tgz", "README.md", "values.schema.json"]
+	// Files to include when exporting
+	include []string,
+) (*Directory, error) {
+	c := dag.Container().
+		WithDirectory("/src", hp.Container.Directory(workDir), ContainerWithDirectoryOpts{Include: include}).
+		Directory("/src")
+
+	return c, nil
+}
+
+func (hp *HelmPackage) List(
+	ctx context.Context,
+) (string, error) {
+	return hp.Container.WithExec([]string{"ls", workDir}).Stdout(ctx)
 }
 
 func (hp *HelmPackage) File(
@@ -120,24 +139,43 @@ func (hp *HelmPackage) Push(
 	return nil
 }
 
-func (hp *HelmPackage) Directory(
+func (hp *HelmPackage) Test(
 	ctx context.Context,
+	// Additional arguments to pass to helm upgrade
+	// +default=""
+	additionalArgs string,
+	// Port to use for the Kubernetes API
+	// +default=6443
+	kubernetesPort int,
+	// Service providing Kubernetes API
+	// TODO: Make this optional and default to a built-in service
+	kubernetesService *Service,
+	// kubeconfig to use for Kubernetes API access
+	// Required if kubernetesService is provided
 	// +optional
-	// +default=["Chart.lock", "Chart.yaml", "package.tgz", "README.md"]
-	include []string,
-) (*Directory, error) {
-	c := dag.Container().
-		WithDirectory("/src", hp.Container.Directory(workDir), ContainerWithDirectoryOpts{Include: include}).
-		Directory("/src")
-
-	return c, nil
+	kubeconfig *File,
+	// Name of the Helm release
+	name string,
+	// Namespace of the Helm release
+	namespace string,
+) *Container {
+	return hp.Container.
+		WithServiceBinding("kubernetes", kubernetesService).
+		WithFile("/root/.kube/config", kubeconfig).
+		WithExec([]string{"kubectl", "config", "set-cluster", "minikube", fmt.Sprintf("--server=https://kubernetes:%d", kubernetesPort)}).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("helm upgrade %s ./package.tgz --atomic --create-namespace --install --namespace %s --wait %s", name, namespace, additionalArgs)}).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("helm uninstall %s --namespace %s --wait", name, namespace)}).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("kubectl delete namespace %s", namespace)})
 }
 
 func (m *Helm) base() *Container {
 	c := dag.Container().
-		From("docker.io/library/alpine:3.19.1").
-		WithExec([]string{"sh", "-c", "echo '@edge https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories"}).
-		WithExec([]string{"apk", "add", "git=2.43.0-r0", "go@edge=1.22.2-r0", "helm=3.14.2-r2", "npm=10.2.5-r0", "yq=4.35.2-r4"}).
+		// TODO: Actually implement function to update the version
+		// @version policy=^3.0.0 resolved=3.19.1
+		From("docker.io/library/alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b").
+		WithExec([]string{"sh", "-c", "echo '@community https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories"}).
+		WithExec([]string{"apk", "add", "git=2.43.4-r0", "go@community=1.22.2-r0", "helm=3.14.2-r2", "npm=10.2.5-r0", "yq=4.35.2-r4"}).
+		WithExec([]string{"apk", "add", "kubectl@community=1.30.0-r1"}).
 		WithExec([]string{"go", "install", "github.com/norwoodj/helm-docs/cmd/helm-docs@latest"}).
 		WithExec([]string{"npm", "install", "-g", "@socialgouv/helm-schema"}).
 		WithExec([]string{"helm", "plugin", "install", "https://github.com/helm-unittest/helm-unittest.git"})
