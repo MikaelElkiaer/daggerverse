@@ -7,9 +7,11 @@ import (
 )
 
 type Testing struct {
+  // +private
 	Main *MikaelElkiaer
 }
 
+// Simple examples for test purposes
 func (m *MikaelElkiaer) Testing(
 	ctx context.Context,
 ) *Testing {

@@ -9,9 +9,11 @@ import (
 var workDir = "/src"
 
 type Helm struct {
+  // +private
 	Main *MikaelElkiaer
 }
 
+// Helm package manager
 func (m *MikaelElkiaer) Helm(
 	ctx context.Context,
 ) *Helm {

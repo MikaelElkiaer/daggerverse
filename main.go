@@ -1,9 +1,12 @@
 package main
 
 type MikaelElkiaer struct {
-	GithubToken    *Secret
-	GithubUsername string
+	// +private
 	AdditionalCAs  []string
+	// +private
+	GithubToken    *Secret
+	// +private
+	GithubUsername string
 }
 
 func New(

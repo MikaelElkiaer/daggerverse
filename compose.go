@@ -10,9 +10,11 @@ import (
 var script string
 
 type Compose struct {
+  // +private
 	Main *MikaelElkiaer
 }
 
+// Docker Compose utilities
 func (m *MikaelElkiaer) Compose(
 	ctx context.Context,
 ) *Compose {
