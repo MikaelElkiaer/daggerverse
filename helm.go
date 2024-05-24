@@ -50,8 +50,7 @@ func (m *Helm) Build(
 		WithDirectory(".", source.Directory("/"), ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
 		WithExec([]string{"sh", "-c", "touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test(\"^https?://\")) | [\"helm\", \"repo\", \"add\", .name, .repository] | join(\" \")) | .[]' ./Chart.lock | sh --;"}).
 		WithExec([]string{"helm", "dependency", "build"}).
-		WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: helmIgnore}).
-		WithDirectory("templates", source.Directory("templates"))
+		WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: helmIgnore})
 
 	if enableLint {
 		c = c.WithExec([]string{"helm", "lint"})
