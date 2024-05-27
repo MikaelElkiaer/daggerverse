@@ -2,20 +2,25 @@ package main
 
 import (
 	"context"
+	"fmt"
 )
 
 type Dotnet struct {
 	// +private
-	Main *MikaelElkiaer
+	Container *Container
 	// +private
-	NugetConfig *File
+	Main *MikaelElkiaer
 }
 
 // .NET submodule
 func (m *MikaelElkiaer) Dotnet(
 	ctx context.Context,
 ) *Dotnet {
-	return &Dotnet{Main: m}
+	c := dag.Container().
+		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine").
+		WithExec(inSh("apk add bash"))
+
+	return &Dotnet{Container: c, Main: m}
 }
 
 // Build a .NET project
@@ -33,18 +38,11 @@ func (m *Dotnet) Build(
 	// +default="*.sln"
 	sln string,
 ) *DotnetBuild {
-	c := dag.Container().
-		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine").
-		WithExec(inSh("apk add bash")).
-		WithWorkdir("/src").
+	c := m.Container.WithWorkdir("/src").
 		WithDirectory(".", source, ContainerWithDirectoryOpts{Include: []string{csproj}}).
 		WithDirectory(".", source, ContainerWithDirectoryOpts{Include: []string{sln}})
 
-	if m.NugetConfig != nil {
-		c = c.WithMountedFile("./NuGet.Config", m.NugetConfig)
-	}
-
-	c = c.WithExec([]string{"dotnet", "restore"}).
+	c = c.WithExec(inSh("dotnet restore --configfile /root/nuget/nuget.config")).
 		WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: []string{"[Dd]ebug/", "[Rr]elease/"}}).
 		WithExec(inSh("dotnet build --configuration %s", configuration))
 
@@ -54,41 +52,85 @@ func (m *Dotnet) Build(
 // Set up NuGet config
 func (m *Dotnet) WithNuget(
 	ctx context.Context,
-	// Path to an existing NuGet.Config file
-	// If not provided, a default one will be created
-	// +optional
-	path *File,
-) *Dotnet {
-	var file *File
-	if path != nil {
-		file = path
-	} else {
-		file = m.createNugetConfig(ctx)
-	}
-
-	return &Dotnet{Main: m.Main, NugetConfig: file}
+  // NuGet feed URL
+	feed string,
+  // Used as identifier in configs
+	name string,
+  // User name, email, or similar
+	userId string,
+  // Password, token, or similar
+	userSecret *Secret,
+) (*Dotnet, error) {
+	return m.withNuget(ctx, feed, name, userId, userSecret)
 }
 
-func (m *Dotnet) createNugetConfig(
+// Set up NuGet config for GitHub Container Registry
+func (m *Dotnet) WithNugetGhcr(
 	ctx context.Context,
-) *File {
-	c := dag.Container().
-		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine").
-		WithExec(inSh("echo '<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration></configuration>' > /NuGet.Config"))
-
-	for _, cred := range m.Main.Creds {
-		var organisation string
-		if cred.Name != "" {
-			organisation = cred.Name
-		} else {
-			organisation = cred.UserId
+	// Credential to use
+  // Defaults to the first credential
+	// +optional
+	fromCred string,
+) (*Dotnet, error) {
+	var cred *Cred
+	if fromCred != "" {
+		var error error
+		cred, error = getCred(m.Main.Creds, fromCred)
+		if error != nil {
+			return nil, fmt.Errorf("cred %s not found", fromCred)
 		}
-		c = c.WithSecretVariable("GH_TOKEN", cred.UserSecret).
-			WithEnvVariable("GH_USERNAME", cred.UserId).
-			WithExec(inSh("dotnet nuget add source --username $GH_USERNAME --password $GH_TOKEN --store-password-in-clear-text --name %s https://nuget.pkg.github.com/%s/index.json --configfile /NuGet.Config", organisation, organisation))
+	} else {
+		for _, c := range m.Main.Creds {
+			cred = c
+			break
+		}
 	}
 
-	return c.File("/NuGet.Config")
+	if cred == nil {
+		return nil, fmt.Errorf("no creds found")
+	}
+
+	feed := fmt.Sprintf("https://nuget.pkg.github.com/%s/index.json", cred.Name)
+	return m.withNuget(ctx, feed, cred.Name, cred.UserId, cred.UserSecret)
+}
+
+func getCred(
+	creds []*Cred,
+	fromCred string,
+) (*Cred, error) {
+	var cred *Cred
+	for _, c := range creds {
+		if c.Name == fromCred {
+			if cred != nil {
+				return nil, fmt.Errorf("multiple creds with name %s found", fromCred)
+			}
+			cred = c
+		}
+	}
+
+	if cred == nil {
+		return nil, fmt.Errorf("cred %s not found", fromCred)
+	}
+
+	return cred, nil
+}
+
+func (m *Dotnet) withNuget(
+	ctx context.Context,
+	feed string,
+	name string,
+	userId string,
+	userSecret *Secret,
+) (*Dotnet, error) {
+	c := m.Container.
+		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/")).
+		WithSecretVariable("__PASSWORD", userSecret).
+		WithEnvVariable("__USERNAME", userId).
+		WithExec(inSh("dotnet nuget add source --username $__USERNAME --password $__PASSWORD --store-password-in-clear-text --name %s %s --configfile /root/nuget/nuget.config", name, feed)).
+		WithoutSecretVariable("__PASSWORD").
+		WithoutEnvVariable("__USERNAME")
+
+	return &Dotnet{Container: c, Main: m.Main}, nil
 }
 
 type DotnetBuild struct {

@@ -27,22 +27,26 @@ func (m *MikaelElkiaer) WithAdditionalCA(
 // Add additional creds
 func (m *MikaelElkiaer) WithCred(
 	// Used as identifier in configs
+	// Defaults to userId
 	// GitHub: Used as organisation name if set
 	// +optional
 	name string,
 	// User name, email, or similar
-	// +default="gh"
 	userId string,
 	// Password, token, or similar
 	userSecret *Secret,
-) *MikaelElkiaer {
+) (*MikaelElkiaer, error) {
+	id := name
+	if id == "" {
+		id = userId
+	}
 	cred := &Cred{
-		Name:       name,
+		Name:       id,
 		UserId:     userId,
 		UserSecret: userSecret,
 	}
 	m.Creds = append(m.Creds, cred)
-	return m
+	return m, nil
 }
 
 func inSh(
