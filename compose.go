@@ -10,7 +10,7 @@ import (
 var script string
 
 type Compose struct {
-  // +private
+	// +private
 	Main *MikaelElkiaer
 }
 
@@ -37,10 +37,10 @@ func (m *Compose) UpdateImages(
 		}).
 		WithExec([]string{"npm", "install", "--global", "semver@7.6.2"})
 
-	if m.Main.GithubToken != nil {
-		c = c.WithRegistryAuth("ghcr.io", m.Main.GithubUsername, m.Main.GithubToken).
-			WithSecretVariable("GH_TOKEN", m.Main.GithubToken).
-			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | skopeo login --username %s --password-stdin ghcr.io", m.Main.GithubUsername)}).
+	for _, cred := range m.Main.Creds {
+		c = c.WithRegistryAuth("ghcr.io", cred.UserId, cred.UserSecret).
+			WithSecretVariable("GH_TOKEN", cred.UserSecret).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | skopeo login --username %s --password-stdin ghcr.io", cred.UserId)}).
 			WithoutSecretVariable("GH_TOKEN")
 	}
 

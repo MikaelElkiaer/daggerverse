@@ -9,7 +9,7 @@ import (
 var workDir = "/src"
 
 type Helm struct {
-  // +private
+	// +private
 	Main *MikaelElkiaer
 }
 
@@ -39,7 +39,10 @@ func (m *Helm) Build(
 	// Local directory containing source files
 	source *Directory,
 ) (*HelmPackage, error) {
-	c := m.base()
+	c, error := m.base(ctx)
+	if error != nil {
+		return nil, error
+	}
 
 	helmIgnoreFile, error := source.File(".helmignore").Contents(ctx)
 	if error != nil {
@@ -154,7 +157,9 @@ func (hp *HelmPackage) Test(
 		WithExec([]string{"sh", "-c", fmt.Sprintf("kubectl delete namespace %s", namespace)})
 }
 
-func (m *Helm) base() *Container {
+func (m *Helm) base(
+	ctx context.Context,
+) (*Container, error) {
 	c := dag.Container().
 		// TODO: Actually implement function to update the version
 		// @version policy=^3.0.0 resolved=3.19.1
@@ -168,19 +173,23 @@ func (m *Helm) base() *Container {
 
 	if len(m.Main.AdditionalCAs) > 0 {
 		for _, ca := range m.Main.AdditionalCAs {
+			name, error := ca.Name(ctx)
+			if error != nil {
+				return nil, error
+			}
 			c = c.
 				WithWorkdir("/usr/local/share/ca-certificates/").
-				WithExec([]string{"wget", ca})
+				WithMountedSecret(name, ca)
 		}
 		c = c.WithExec([]string{"update-ca-certificates"})
 	}
 
-	if m.Main.GithubToken != nil {
+	for _, cred := range m.Main.Creds {
 		c = c.
-			WithSecretVariable("GH_TOKEN", m.Main.GithubToken).
-			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | helm registry login --username %s --password-stdin ghcr.io", m.Main.GithubUsername)}).
+			WithSecretVariable("GH_TOKEN", cred.UserSecret).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("echo $GH_TOKEN | helm registry login --username %s --password-stdin ghcr.io", cred.UserId)}).
 			WithoutSecretVariable("GH_TOKEN")
 	}
 
-	return c
+	return c, nil
 }

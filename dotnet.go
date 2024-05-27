@@ -58,16 +58,12 @@ func (m *Dotnet) WithNuget(
 	// If not provided, a default one will be created
 	// +optional
 	path *File,
-	// The organisation to use for the NuGet source
-	// Required if path is not provided
-	// +optional
-	organisation string,
 ) *Dotnet {
 	var file *File
 	if path != nil {
 		file = path
-	} else if organisation != "" {
-		file = m.createNugetConfig(ctx, organisation)
+	} else {
+		file = m.createNugetConfig(ctx)
 	}
 
 	return &Dotnet{Main: m.Main, NugetConfig: file}
@@ -75,20 +71,29 @@ func (m *Dotnet) WithNuget(
 
 func (m *Dotnet) createNugetConfig(
 	ctx context.Context,
-	organisation string,
 ) *File {
-	return dag.Container().
+	c := dag.Container().
 		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine").
-		WithSecretVariable("GH_TOKEN", m.Main.GithubToken).
-		WithEnvVariable("GH_USERNAME", m.Main.GithubUsername).
-		WithExec(inSh("echo '<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration></configuration>' > /NuGet.Config")).
-		WithExec(inSh("cat", "/NuGet.Config")).
-		WithExec(inSh("dotnet nuget add source --username $GH_USERNAME --password $GH_TOKEN --store-password-in-clear-text --name %s https://nuget.pkg.github.com/%s/index.json --configfile /NuGet.Config", organisation, organisation)).
-		File("/NuGet.Config")
+		WithExec(inSh("echo '<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration></configuration>' > /NuGet.Config"))
+
+	for _, cred := range m.Main.Creds {
+		var organisation string
+		if cred.Name != "" {
+			organisation = cred.Name
+		} else {
+			organisation = cred.UserId
+		}
+		c = c.WithSecretVariable("GH_TOKEN", cred.UserSecret).
+			WithEnvVariable("GH_USERNAME", cred.UserId).
+			WithExec(inSh("dotnet nuget add source --username $GH_USERNAME --password $GH_TOKEN --store-password-in-clear-text --name %s https://nuget.pkg.github.com/%s/index.json --configfile /NuGet.Config", organisation, organisation))
+	}
+
+	return c.File("/NuGet.Config")
 }
 
 type DotnetBuild struct {
-	Container     *Container
+	Container *Container
+	//+private
 	Configuration string
 }
 
