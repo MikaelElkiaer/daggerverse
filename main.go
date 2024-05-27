@@ -1,10 +1,12 @@
 package main
 
+import "fmt"
+
 type MikaelElkiaer struct {
 	// +private
-	AdditionalCAs  []string
+	AdditionalCAs []string
 	// +private
-	GithubToken    *Secret
+	GithubToken *Secret
 	// +private
 	GithubUsername string
 }
@@ -26,4 +28,11 @@ func New(
 		GithubToken:    githubToken,
 		GithubUsername: githubUsername,
 	}
+}
+
+func inSh(
+	cmd string,
+	a ...any,
+) []string {
+	return []string{"sh", "-c", fmt.Sprintf(cmd, a...)}
 }
