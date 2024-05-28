@@ -22,7 +22,7 @@ func (m *MikaelElkiaer) Helm(
 
 type HelmPackage struct {
 	Container *Container
-	Output    *File
+	Parent    *Helm
 }
 
 // Build Helm package
@@ -86,7 +86,7 @@ func (m *Helm) Build(
 		WithExec([]string{"helm", "package", "."}).
 		WithExec([]string{"sh", "-c", "mv *.tgz package.tgz"})
 
-	return &HelmPackage{Container: c}, nil
+	return &HelmPackage{Container: c, Parent: m}, nil
 }
 
 func (hp *HelmPackage) Directory(
@@ -111,7 +111,7 @@ func (hp *HelmPackage) List(
 func (hp *HelmPackage) File(
 	ctx context.Context,
 ) (*File, error) {
-	return hp.Output, nil
+	return hp.Container.File("package.tgz"), nil
 }
 
 func (hp *HelmPackage) Noop() {
@@ -148,13 +148,38 @@ func (hp *HelmPackage) Test(
 	// Namespace of the Helm release
 	namespace string,
 ) *Container {
-	return hp.Container.
+	c := hp.Container.
 		WithServiceBinding("kubernetes", kubernetesService).
 		WithFile("/root/.kube/config", kubeconfig).
 		WithExec([]string{"kubectl", "config", "set-cluster", "minikube", fmt.Sprintf("--server=https://kubernetes:%d", kubernetesPort)}).
-		WithExec([]string{"sh", "-c", fmt.Sprintf("helm upgrade %s ./package.tgz --atomic --create-namespace --install --namespace %s --wait %s", name, namespace, additionalArgs)}).
+		WithExec(inSh("kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -", namespace))
+
+	c = createSecrets(c, hp.Parent.Main.Creds, name, namespace)
+
+	c = c.WithExec([]string{"sh", "-c", fmt.Sprintf("helm upgrade %s ./package.tgz --atomic --install --namespace %s --wait %s", name, namespace, additionalArgs)}).
 		WithExec([]string{"sh", "-c", fmt.Sprintf("helm uninstall %s --namespace %s --wait", name, namespace)}).
 		WithExec([]string{"sh", "-c", fmt.Sprintf("kubectl delete namespace %s", namespace)})
+
+	return c
+}
+
+func createSecrets(container *Container, creds []*Cred, name string, namespace string) *Container {
+	c := container
+	for _, cred := range creds {
+		c = c.
+			WithSecretVariable("__PASSWORD", cred.UserSecret).
+			WithEnvVariable("__USERNAME", cred.UserId).
+			WithExec(inSh(`kubectl create secret docker-registry %s-image-secret \
+				--namespace=%s \
+				--docker-server=ghcr.io \
+				--docker-username=$__USERNAME \
+				--docker-password=$__PASSWORD \
+				--dry-run=client --output=json | \
+			kubectl apply -f -`, name, namespace)).
+			WithoutSecretVariable("__PASSWORD").
+			WithoutEnvVariable("__USERNAME")
+	}
+	return c
 }
 
 func (m *Helm) base(
