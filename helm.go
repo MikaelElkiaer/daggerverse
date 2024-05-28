@@ -190,8 +190,8 @@ func (m *Helm) base(
 		// @version policy=^3.0.0 resolved=3.19.1
 		From("docker.io/library/alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b").
 		WithExec([]string{"sh", "-c", "echo '@community https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories"}).
-		WithExec([]string{"apk", "add", "git=2.43.4-r0", "go@community=1.22.2-r0", "helm=3.14.2-r2", "npm=10.2.5-r0", "yq=4.35.2-r4"}).
-		WithExec([]string{"apk", "add", "kubectl@community=1.30.0-r1"}).
+		WithExec([]string{"apk", "add", "go@community=1.22.3-r0"}).
+		WithExec([]string{"apk", "add", "git=2.43.4-r0", "kubectl@community=1.30.0-r1", "helm=3.14.2-r2", "npm=10.2.5-r0", "yq=4.35.2-r4"}).
 		WithExec([]string{"go", "install", "github.com/norwoodj/helm-docs/cmd/helm-docs@latest"}).
 		WithExec([]string{"npm", "install", "-g", "@socialgouv/helm-schema"}).
 		WithExec([]string{"helm", "plugin", "install", "https://github.com/helm-unittest/helm-unittest.git"})
