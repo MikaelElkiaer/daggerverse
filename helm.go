@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-var workDir = "/src"
+var (
+	workDir      = "/src"
+	templatedDir = "/src/templated"
+)
 
 type Helm struct {
 	// +private
@@ -128,6 +131,21 @@ func (hp *HelmPackage) Push(
 	return nil
 }
 
+func (hp *HelmPackage) Template(
+	ctx context.Context,
+	// Additional arguments to pass to helm template
+	// +default=""
+	additionalArgs string,
+	// Namespace to template
+	// +default="test"
+	namespace string,
+) (*HelmTemplated, error) {
+	c := hp.Container.
+		WithExec(inSh("helm template . --namespace=%s --output-dir=%s %s", namespace, templatedDir, additionalArgs))
+
+	return &HelmTemplated{Container: c, Parent: hp}, nil
+}
+
 func (hp *HelmPackage) Test(
 	ctx context.Context,
 	// Additional arguments to pass to helm upgrade
@@ -163,6 +181,24 @@ func (hp *HelmPackage) Test(
 	return c
 }
 
+type HelmTemplated struct {
+	Container *Container
+	Parent    *HelmPackage
+}
+
+func (ht *HelmTemplated) Check(
+	ctx context.Context,
+	// Kubernetes version to check against
+	// +default="1.29"
+	kubernetesVersion string,
+) (*HelmTemplated, error) {
+	c := ht.Container.
+		WithExec(inSh("/root/go/bin/kubectl-validate %s --version %s", templatedDir, kubernetesVersion)).
+		WithExec(inSh("pluto detect-files --target-versions k8s=v%s --v 7 --directory %s", kubernetesVersion, templatedDir))
+
+	return &HelmTemplated{Container: c, Parent: ht.Parent}, nil
+}
+
 func createSecrets(container *Container, creds []*Cred, name string, namespace string) *Container {
 	c := container
 	for _, cred := range creds {
@@ -194,7 +230,9 @@ func (m *Helm) base(
 		WithExec([]string{"apk", "add", "git=2.43.4-r0", "kubectl@community=1.30.0-r1", "helm=3.14.2-r2", "npm=10.2.5-r0", "yq=4.35.2-r4"}).
 		WithExec([]string{"go", "install", "github.com/norwoodj/helm-docs/cmd/helm-docs@latest"}).
 		WithExec([]string{"npm", "install", "-g", "@socialgouv/helm-schema"}).
-		WithExec([]string{"helm", "plugin", "install", "https://github.com/helm-unittest/helm-unittest.git"})
+		WithExec([]string{"helm", "plugin", "install", "https://github.com/helm-unittest/helm-unittest.git"}).
+		WithExec(inSh("go install sigs.k8s.io/kubectl-validate@v0.0.4")).
+		WithExec(inSh("wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.4/pluto_5.19.4_linux_amd64.tar.gz -O pluto.tgz && tar -zxvf pluto.tgz pluto && mv pluto /usr/bin/pluto && rm pluto.tgz"))
 
 	if len(m.Main.AdditionalCAs) > 0 {
 		for _, ca := range m.Main.AdditionalCAs {
