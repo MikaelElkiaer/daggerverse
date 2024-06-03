@@ -369,9 +369,13 @@ func (m *MikaelElkiaer) helm(
 
 	for _, cred := range m.Creds {
 		c = c.
-			WithSecretVariable("GH_TOKEN", cred.UserSecret).
-			WithExec(inSh(`echo $GH_TOKEN | helm registry login --username %s --password-stdin ghcr.io`, cred.UserId)).
-			WithoutSecretVariable("GH_TOKEN")
+			WithEnvVariable("__URL", cred.Url).
+			WithEnvVariable("__USERNAME", cred.UserId).
+			WithSecretVariable("__PASSWORD", cred.UserSecret).
+			WithExec(inSh(`echo $__PASSWORD | helm registry login --username $__USERNAME --password-stdin $__URL`)).
+			WithoutSecretVariable("__PASSWORD").
+			WithoutEnvVariable("__USERNAME").
+			WithoutEnvVariable("__URL")
 	}
 
 	c = c.WithWorkdir(WORKDIR)

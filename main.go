@@ -11,16 +11,17 @@ type MikaelElkiaer struct {
 
 type Cred struct {
 	Name       string
+	Url        string
 	UserId     string
 	UserSecret *Secret
 }
 
 // Add an additional CA certificate
 func (m *MikaelElkiaer) WithAdditionalCA(
-	// Path to a file containing the CA
-	path *Secret,
+	// File containing the CA
+	file *Secret,
 ) *MikaelElkiaer {
-	m.AdditionalCAs = append(m.AdditionalCAs, path)
+	m.AdditionalCAs = append(m.AdditionalCAs, file)
 	return m
 }
 
@@ -31,6 +32,9 @@ func (m *MikaelElkiaer) WithCred(
 	// GitHub: Used as organisation name if set
 	// +optional
 	name string,
+	// URL to the service
+	// +default="ghcr.io"
+	url string,
 	// User name, email, or similar
 	userId string,
 	// Password, token, or similar
@@ -42,6 +46,7 @@ func (m *MikaelElkiaer) WithCred(
 	}
 	cred := &Cred{
 		Name:       id,
+		Url:        url,
 		UserId:     userId,
 		UserSecret: userSecret,
 	}
