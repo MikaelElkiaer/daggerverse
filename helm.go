@@ -109,10 +109,10 @@ func (m *HelmBuild) Unittest(
 	return m.run(ctx, func(c *Container) *Container {
 		return c.
 			WithDirectory(".", m.Source, ContainerWithDirectoryOpts{Include: []string{"**/*_test.yaml"}}).
-			WithExec(inSh(`helm unittest .`))
+			WithExec(inSh(`/root/go/bin/helm-unittest .`))
 	}, func(c *Container) *Container {
 		return c.
-			WithExec(inSh(`helm plugin install https://github.com/helm-unittest/helm-unittest.git`))
+      WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`))
 	})
 }
 
