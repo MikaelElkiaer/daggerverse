@@ -351,8 +351,8 @@ func (m *MikaelElkiaer) helm(
 		// @version policy=^3.0.0 resolved=3.19.1
 		From("docker.io/library/alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b").
 		WithExec(inSh(`echo '@community https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories`)).
-		WithExec(inSh(`apk add go@community=1.22.3-r0`)).
-		WithExec(inSh(`apk add git=2.43.4-r0 kubectl@community=1.30.0-r1 helm=3.14.2-r2 npm=10.2.5-r0 yq=4.35.2-r4`))
+		WithExec(inSh(`apk add go@community=1.22.4-r0`)).
+		WithExec(inSh(`apk add git=2.45.2-r1 kubectl@community=1.30.2-r0 helm=3.15.1-r0 npm=10.8.0-r0 yq-go=4.44.2-r0`))
 
 	if len(m.AdditionalCAs) > 0 {
 		for _, ca := range m.AdditionalCAs {
