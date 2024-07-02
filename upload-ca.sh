@@ -14,3 +14,4 @@ fi
 
 ID="$(docker ps --quiet --filter name=dagger-engine)"
 docker cp "$CERT_PATH" "$ID:/etc/ssl/certs"
+docker restart "$ID"
