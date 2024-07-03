@@ -39,6 +39,8 @@ type HelmBuild struct {
 // Run build commands
 func (m *Helm) Build(
 	ctx context.Context,
+	// +default=false
+	skipRestore bool,
 	// Directory containing source files
 	source *Directory,
 ) (*HelmBuild, error) {
@@ -48,11 +50,13 @@ func (m *Helm) Build(
 	}
 	helmIgnore := strings.Split(helmIgnoreFile, "\n")
 
-	b := m.Base.
-		WithDirectory(WORKDIR, source.Directory("/"), ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
-		WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
-		WithExec(inSh(`helm dependency build`)).
-		WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: helmIgnore})
+	b := m.Base
+	if !skipRestore {
+		b = b.WithDirectory(WORKDIR, source.Directory("/"), ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
+			WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
+			WithExec(inSh(`helm dependency build`))
+	}
+	b = b.WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: helmIgnore})
 
 	c := dag.Container().
 		WithDirectory(WORKDIR, b.Directory(WORKDIR))
@@ -112,7 +116,7 @@ func (m *HelmBuild) Unittest(
 			WithExec(inSh(`/root/go/bin/helm-unittest .`))
 	}, func(c *Container) *Container {
 		return c.
-      WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`))
+			WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`))
 	})
 }
 
