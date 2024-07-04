@@ -86,10 +86,10 @@ func (m *HelmBuild) Schema(
 ) *HelmBuild {
 	return m.run(ctx, func(c *Container) *Container {
 		return c.
-			WithExec(inSh(`helm-schema`))
+			WithExec(inSh(`/root/go/bin/helm-schema`))
 	}, func(c *Container) *Container {
 		return c.
-			WithExec(inSh(`npm install -g @socialgouv/helm-schema`))
+			WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`))
 	})
 }
 
