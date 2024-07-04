@@ -135,8 +135,8 @@ func (m *HelmBuild) Check(
 		return m, nil
 	}
 
-	return m.Lint(ctx).
-		Schema(ctx).
+	return m.Schema(ctx).
+		Lint(ctx).
 		Docs(ctx).
 		Unittest(ctx), nil
 }
