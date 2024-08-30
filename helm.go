@@ -15,6 +15,8 @@ const (
 type Helm struct {
 	// Base container with tools
 	Base *dagger.Container
+	// +private
+	Module *MikaelElkiaer
 }
 
 // Submodule for Helm
@@ -25,7 +27,7 @@ func (m *MikaelElkiaer) Helm(
 	if error != nil {
 		return nil, error
 	}
-	return &Helm{Base: b}, nil
+	return &Helm{Base: b, Module: m}, nil
 }
 
 type HelmBuild struct {
@@ -35,6 +37,8 @@ type HelmBuild struct {
 	Base *dagger.Container
 	// +private
 	Source *dagger.Directory
+	// +private
+	Module *MikaelElkiaer
 }
 
 // Run build commands
@@ -62,7 +66,7 @@ func (m *Helm) Build(
 	c := dag.Container().
 		WithDirectory(WORKDIR, b.Directory(WORKDIR))
 
-	return &HelmBuild{Base: m.Base, Container: c, Source: source}, nil
+	return &HelmBuild{Base: m.Base, Container: c, Module: m.Module, Source: source}, nil
 }
 
 // Get directory containing modified source files
@@ -152,7 +156,7 @@ func (m *HelmBuild) Package(
 			WithExec(inSh(`mv *.tgz %s`, PACKAGE))
 	}, nil)
 
-	return &HelmPackage{Base: m.Base, Container: b.Container}
+	return &HelmPackage{Base: m.Base, Container: b.Container, Module: m.Module}
 }
 
 // Template Helm chart using source
@@ -199,6 +203,8 @@ type HelmPackage struct {
 	Container *dagger.Container
 	// +private
 	Base *dagger.Container
+	// +private
+	Module *MikaelElkiaer
 }
 
 // Get Helm package
@@ -241,7 +247,7 @@ func (m *HelmPackage) Deploy(
 	// +default=6443
 	kubernetesPort int,
 	// Service providing Kubernetes API
-	// TODO: Make this optional and default to a built-in service
+	// +optional
 	kubernetesService *dagger.Service,
 	// kubeconfig to use for Kubernetes API access
 	// Required if kubernetesService is provided
@@ -252,20 +258,27 @@ func (m *HelmPackage) Deploy(
 	// Namespace of the Helm release
 	namespace string,
 ) (*HelmPackage, error) {
+	k3s := dag.K3S("test")
+	cluster := k3s.Server()
+	cluster, err := cluster.Start(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	c := m.Base.
 		WithFile(PACKAGE, m.AsFile(ctx)).
-		WithServiceBinding("kubernetes", kubernetesService).
-		WithFile("/root/.kube/config", kubeconfig).
-		WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
+		// WithServiceBinding("kubernetes", kubernetesService).
+		// WithFile("/root/.kube/config", kubeconfig).
+		WithFile("/root/.kube/config", k3s.Config()).
+		// WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
 		WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
 
-	c = withDockerPullSecrets(c, name, namespace)
-
-	c = c.WithExec(inSh(`helm upgrade %s %s --atomic --install --namespace %s --wait %s`, name, PACKAGE, namespace, additionalArgs)).
+	c = withDockerPullSecrets(c, m.Module.Creds, name, namespace)
+	c = c.WithExec(inSh(`helm upgrade %s %s --atomic --debug --install --namespace=%s --timeout=120s --wait %s`, name, PACKAGE, namespace, additionalArgs)).
 		WithExec(inSh(`helm uninstall %s --namespace %s --wait`, name, namespace)).
 		WithExec(inSh(`kubectl delete namespace %s`, namespace))
 
-	return &HelmPackage{Base: m.Base, Container: m.Container}, nil
+	return &HelmPackage{Base: m.Base, Container: c, Module: m.Module}, nil
 }
 
 type HelmTemplate struct {
@@ -389,19 +402,22 @@ func (m *MikaelElkiaer) helm(
 
 func withDockerPullSecrets(
 	container *dagger.Container,
+	creds []*Cred,
 	name string,
 	namespace string,
 ) *dagger.Container {
-	return container.
-		WithExec(inSh(`[ -f /root/.docker/config.json ] && cat <<EOF | kubectl apply -f -
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: %s
-  namespace: %s
-data:
-  .dockerconfigjson: $(cat /root/.docker/config.json | base64 -w 0)
-type: kubernetes.io/dockerconfigjson
-EOF`, name, namespace))
+	c := container
+	for _, cred := range creds {
+		c = c.
+			WithEnvVariable("__NAME", name).
+			WithEnvVariable("__URL", cred.Url).
+			WithEnvVariable("__USERNAME", cred.UserId).
+			WithSecretVariable("__PASSWORD", cred.UserSecret).
+			WithExec(inSh(`kubectl --namespace %s create secret docker-registry "${__NAME}" --docker-username="${__USERNAME}" --docker-password="${__PASSWORD}" --docker-email="" --docker-server="${__URL}" --dry-run=client --output=json | kubectl apply -f -`, namespace)).
+			WithoutSecretVariable("__PASSWORD").
+			WithoutEnvVariable("__USERNAME").
+			WithoutEnvVariable("__URL").
+			WithoutEnvVariable("__NAME")
+	}
+	return c
 }
