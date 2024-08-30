@@ -244,7 +244,7 @@ func (m *HelmPackage) Deploy(
 	// +default=""
 	additionalArgs string,
 	// Port to use for the Kubernetes API
-	// +default=6443
+	// +default=8443
 	kubernetesPort int,
 	// Service providing Kubernetes API
 	// +optional
@@ -258,22 +258,25 @@ func (m *HelmPackage) Deploy(
 	// Namespace of the Helm release
 	namespace string,
 ) (*HelmPackage, error) {
-	k3s := dag.K3S("test")
-	cluster := k3s.Server()
-	cluster, err := cluster.Start(ctx)
-	if err != nil {
-		return nil, err
+	c := m.Base.
+		WithFile(PACKAGE, m.AsFile(ctx))
+
+	if kubernetesService == nil {
+		k3s := dag.K3S("test")
+		cluster := k3s.Server()
+		cluster, err := cluster.Start(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c = c.WithFile("/root/.kube/config", k3s.Config())
+	} else {
+		c = c.WithServiceBinding("kubernetes", kubernetesService).
+			WithFile("/root/.kube/config", kubeconfig).
+			WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort))
 	}
 
-	c := m.Base.
-		WithFile(PACKAGE, m.AsFile(ctx)).
-		// WithServiceBinding("kubernetes", kubernetesService).
-		// WithFile("/root/.kube/config", kubeconfig).
-		WithFile("/root/.kube/config", k3s.Config()).
-		// WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
-		WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
-
-	c = withDockerPullSecrets(c, m.Module.Creds, name, namespace)
+	c = c.WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
+	c = withDockerPullSecrets(c, m.Module.Creds, namespace)
 	c = c.WithExec(inSh(`helm upgrade %s %s --atomic --debug --install --namespace=%s --timeout=120s --wait %s`, name, PACKAGE, namespace, additionalArgs)).
 		WithExec(inSh(`helm uninstall %s --namespace %s --wait`, name, namespace)).
 		WithExec(inSh(`kubectl delete namespace %s`, namespace))
@@ -403,13 +406,12 @@ func (m *MikaelElkiaer) helm(
 func withDockerPullSecrets(
 	container *dagger.Container,
 	creds []*Cred,
-	name string,
 	namespace string,
 ) *dagger.Container {
 	c := container
 	for _, cred := range creds {
 		c = c.
-			WithEnvVariable("__NAME", name).
+			WithEnvVariable("__NAME", cred.Name).
 			WithEnvVariable("__URL", cred.Url).
 			WithEnvVariable("__USERNAME", cred.UserId).
 			WithSecretVariable("__PASSWORD", cred.UserSecret).
