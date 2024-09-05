@@ -1,10 +1,13 @@
 package main
 
-import "fmt"
+import (
+	"dagger/mikael-elkiaer/internal/dagger"
+	"fmt"
+)
 
 type MikaelElkiaer struct {
 	// +private
-	AdditionalCAs []*Secret
+	AdditionalCAs []*dagger.Secret
 	// +private
 	Creds []*Cred
 }
@@ -13,13 +16,13 @@ type Cred struct {
 	Name       string
 	Url        string
 	UserId     string
-	UserSecret *Secret
+	UserSecret *dagger.Secret
 }
 
 // Add an additional CA certificate
 func (m *MikaelElkiaer) WithAdditionalCA(
 	// File containing the CA
-	file *Secret,
+	file *dagger.Secret,
 ) *MikaelElkiaer {
 	m.AdditionalCAs = append(m.AdditionalCAs, file)
 	return m
@@ -38,7 +41,7 @@ func (m *MikaelElkiaer) WithCred(
 	// User name, email, or similar
 	userId string,
 	// Password, token, or similar
-	userSecret *Secret,
+	userSecret *dagger.Secret,
 ) (*MikaelElkiaer, error) {
 	id := name
 	if id == "" {

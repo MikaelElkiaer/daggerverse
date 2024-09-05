@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"dagger/mikael-elkiaer/internal/dagger"
 	_ "embed"
 )
 
@@ -10,7 +11,7 @@ var script string
 
 type Compose struct {
 	// Current state
-	Container *Container
+	Container *dagger.Container
 }
 
 // Submodule for Docker Compose
@@ -25,10 +26,10 @@ func (m *MikaelElkiaer) Compose(
 func (m *Compose) UpdateImages(
 	ctx context.Context,
 	// Docker Compose file
-	file *File,
-) *File {
+	file *dagger.File,
+) *dagger.File {
 	c := m.Container.
-		WithNewFile("script.bash", ContainerWithNewFileOpts{Contents: script}).
+		WithNewFile("script.bash", script).
 		WithFile("docker-compose.yaml", file).
 		WithExec(inSh("bash", "script.bash"))
 
@@ -39,7 +40,7 @@ func (m *Compose) UpdateImages(
 
 func (m *MikaelElkiaer) compose(
 	ctx context.Context,
-) *Container {
+) *dagger.Container {
 	c := dag.Container().
 		From("docker.io/library/alpine:3.19.1").
 		WithExec(inSh("apk add bash=5.2.21-r0 npm=10.2.5-r0 skopeo=1.14.0-r2 yq=4.35.2-r3")).

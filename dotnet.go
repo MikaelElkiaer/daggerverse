@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"dagger/mikael-elkiaer/internal/dagger"
 	"fmt"
 )
 
 type Dotnet struct {
 	// +private
-	Container *Container
+	Container *dagger.Container
 	// +private
 	Main *MikaelElkiaer
 }
@@ -27,7 +28,7 @@ func (m *MikaelElkiaer) Dotnet(
 func (m *Dotnet) Build(
 	ctx context.Context,
 	// Directory containing the source code
-	source *Directory,
+	source *dagger.Directory,
 	// Build configuration to use
 	// +default="Release"
 	configuration string,
@@ -39,11 +40,11 @@ func (m *Dotnet) Build(
 	sln string,
 ) *DotnetBuild {
 	c := m.Container.WithWorkdir("/src").
-		WithDirectory(".", source, ContainerWithDirectoryOpts{Include: []string{csproj}}).
-		WithDirectory(".", source, ContainerWithDirectoryOpts{Include: []string{sln}})
+		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Include: []string{csproj}}).
+		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Include: []string{sln}})
 
 	c = c.WithExec(inSh("dotnet restore --configfile /root/nuget/nuget.config")).
-		WithDirectory(".", source, ContainerWithDirectoryOpts{Exclude: []string{"[Dd]ebug/", "[Rr]elease/"}}).
+		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Exclude: []string{"[Dd]ebug/", "[Rr]elease/"}}).
 		WithExec(inSh("dotnet build --configuration %s", configuration))
 
 	return &DotnetBuild{Container: c, Configuration: configuration}
@@ -59,7 +60,7 @@ func (m *Dotnet) WithNuget(
   // User name, email, or similar
 	userId string,
   // Password, token, or similar
-	userSecret *Secret,
+	userSecret *dagger.Secret,
 ) (*Dotnet, error) {
 	return m.withNuget(ctx, feed, name, userId, userSecret)
 }
@@ -120,7 +121,7 @@ func (m *Dotnet) withNuget(
 	feed string,
 	name string,
 	userId string,
-	userSecret *Secret,
+	userSecret *dagger.Secret,
 ) (*Dotnet, error) {
 	c := m.Container.
 		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/")).
@@ -134,7 +135,7 @@ func (m *Dotnet) withNuget(
 }
 
 type DotnetBuild struct {
-	Container *Container
+	Container *dagger.Container
 	//+private
 	Configuration string
 }
@@ -152,7 +153,7 @@ func (m *DotnetBuild) Test(
 // Publish with runtime
 func (m *DotnetBuild) Publish(
 	ctx context.Context,
-) *Container {
+) *dagger.Container {
 	c := m.Container.
 		WithExec(inSh("dotnet publish --configuration %s --output /app /p:UseAppHost=false --no-restore", m.Configuration))
 

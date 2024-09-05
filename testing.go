@@ -7,7 +7,7 @@ import (
 )
 
 type Testing struct {
-  // +private
+	// +private
 	Main *MikaelElkiaer
 }
 
@@ -26,7 +26,7 @@ func (m *Testing) Interrupt(
 ) (string, error) {
 	return dag.Container().
 		From("docker.io/library/alpine:3.19.1").
-		WithNewFile("/interrupt.sh", ContainerWithNewFileOpts{Contents: interrupt__sh}).
+		WithNewFile("/interrupt.sh", interrupt__sh).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithExec([]string{"sh", "/interrupt.sh"}).
 		Stdout(ctx)
