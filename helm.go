@@ -3,236 +3,170 @@ package main
 import (
 	"context"
 	"dagger/mikael-elkiaer/internal/dagger"
-	"strings"
 )
 
 const (
-	PACKAGE  = WORKDIR + "package.tgz"
-	TEMPLATE = WORKDIR + "templated"
-	WORKDIR  = "/src/"
+	PACKAGE     = WORKDIR + "package.tgz"
+	TEMPLATEDIR = WORKDIR + "templated"
+	WORKDIR     = "/src/"
 )
 
 type Helm struct {
-	// Base container with tools
-	Base *dagger.Container
+	//+private
+	Container *dagger.Container
+	//+private
+	Module  *MikaelElkiaer
+  // Modified source directory
+	Workdir *dagger.Directory
 }
 
 // Submodule for Helm
 func (m *MikaelElkiaer) Helm(
 	ctx context.Context,
+  // Helm chart path
+	source *dagger.Directory,
 ) (*Helm, error) {
-	b, error := m.helm(ctx)
-	if error != nil {
-		return nil, error
+	c, err := m.createHelmContainer(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return &Helm{Base: b}, nil
-}
 
-type HelmBuild struct {
-	// Current state
-	Container *dagger.Container
-	// +private
-	Base *dagger.Container
-	// +private
-	Source *dagger.Directory
+	return &Helm{
+		Container: c,
+		Module:    m,
+		Workdir:   source,
+	}, nil
 }
 
 // Run build commands
 func (m *Helm) Build(
 	ctx context.Context,
-	// +default=false
-	skipRestore bool,
-	// Directory containing source files
-	source *dagger.Directory,
-) (*HelmBuild, error) {
-	helmIgnoreFile, error := source.File(".helmignore").Contents(ctx)
-	if error != nil {
-		return nil, error
-	}
-	helmIgnore := strings.Split(helmIgnoreFile, "\n")
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir, dagger.ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
+		WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
+		WithExec(inSh(`helm dependency build`)).
+		WithDirectory(WORKDIR, m.Workdir)
 
-	b := m.Base
-	if !skipRestore {
-		b = b.WithDirectory(WORKDIR, source.Directory("/"), dagger.ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
-			WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
-			WithExec(inSh(`helm dependency build`))
-	}
-	b = b.WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Exclude: helmIgnore})
-
-	c := dag.Container().
-		WithDirectory(WORKDIR, b.Directory(WORKDIR))
-
-	return &HelmBuild{Base: m.Base, Container: c, Source: source}, nil
-}
-
-// Get directory containing modified source files
-func (m *HelmBuild) AsDirectory(
-	ctx context.Context,
-) *dagger.Directory {
-	return m.Container.Directory(WORKDIR)
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run helm lint
-func (m *HelmBuild) Lint(
+func (m *Helm) Lint(
 	ctx context.Context,
-) *HelmBuild {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(inSh(`helm lint`))
-	}, nil)
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`helm lint .`))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run helm-schema (from @socialgouv)
-func (m *HelmBuild) Schema(
+func (m *Helm) Schema(
 	ctx context.Context,
-) *HelmBuild {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`/root/go/bin/helm-schema`))
-	}, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`))
-	})
+) (*Helm, error) {
+	c := m.Container.WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`)).
+		WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`/root/go/bin/helm-schema`))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run helm-docs (from @norwoodj)
-func (m *HelmBuild) Docs(
+func (m *Helm) Docs(
 	ctx context.Context,
-) *HelmBuild {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`/root/go/bin/helm-docs`))
-	}, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest`))
-	})
+) (*Helm, error) {
+	c := m.Container.WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest`)).
+		WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`/root/go/bin/helm-docs`))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run helm-unittest (from @helm-unittest)
-func (m *HelmBuild) Unittest(
+func (m *Helm) Unittest(
 	ctx context.Context,
-) *HelmBuild {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithDirectory(".", m.Source, dagger.ContainerWithDirectoryOpts{Include: []string{"**/*_test.yaml"}}).
-			WithExec(inSh(`/root/go/bin/helm-unittest .`))
-	}, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`))
-	})
+) (*Helm, error) {
+	c := m.Container.WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`)).
+		WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`/root/go/bin/helm-unittest .`))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run all checks
-func (m *HelmBuild) Check(
+func (m *Helm) Check(
 	ctx context.Context,
-) (*HelmBuild, error) {
-	chartType, error := m.Base.
-		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
-		WithExec(inSh(`yq '.type' Chart.yaml`)).Stdout(ctx)
-	if error != nil {
-		return nil, error
+) (*Helm, error) {
+	m, err := m.Build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err = m.Lint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err = m.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err = m.Unittest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err = m.Docs(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	if chartType == "library" {
-		return m, nil
-	}
-
-	return m.Schema(ctx).
-		Lint(ctx).
-		Docs(ctx).
-		Unittest(ctx), nil
+	return m, nil
 }
 
 // Package Helm chart
-func (m *HelmBuild) Package(
+func (m *Helm) Package(
 	ctx context.Context,
-) *HelmPackage {
-	b := m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`helm package .`)).
-			WithExec(inSh(`mv *.tgz %s`, PACKAGE))
-	}, nil)
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`helm package .`)).
+		WithExec(inSh(`mv *.tgz %s`, PACKAGE))
 
-	return &HelmPackage{Base: m.Base, Container: b.Container}
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Template Helm chart using source
-func (m *HelmBuild) Template(
+func (m *Helm) Template(
 	ctx context.Context,
 	// Additional arguments to pass to helm template
 	// +default=""
 	additionalArgs string,
-) *HelmTemplate {
-	return template(m.Base, m.Container, ".", additionalArgs)
-}
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`helm template %s --output-dir=%s %s`, ".", TEMPLATEDIR, additionalArgs))
 
-func (m *HelmBuild) run(
-	ctx context.Context,
-	execute func(*dagger.Container) *dagger.Container,
-	setup func(*dagger.Container) *dagger.Container,
-) *HelmBuild {
-	b := m.Base
-	if setup != nil {
-		b = setup(b)
-	}
-	b = b.WithDirectory(WORKDIR, m.Container.Directory(WORKDIR))
-	b = execute(b)
-	c := dag.Container().
-		WithDirectory(WORKDIR, b.Directory(WORKDIR))
-	return &HelmBuild{
-		Container: c,
-		Base:      m.Base,
-		Source:    m.Source,
-	}
-}
-
-func template(base *dagger.Container, container *dagger.Container, path string, additionalArgs string) *HelmTemplate {
-	b := &HelmBuild{Base: base, Container: container}
-	b = b.run(context.Background(), func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`helm template %s --output-dir=%s %s`, path, TEMPLATE, additionalArgs))
-	}, nil)
-	return &HelmTemplate{Base: base, Container: b.Container}
-}
-
-type HelmPackage struct {
-	// Current state
-	Container *dagger.Container
-	// +private
-	Base *dagger.Container
-}
-
-// Get Helm package
-func (m *HelmPackage) AsFile(
-	ctx context.Context,
-) *dagger.File {
-	return m.Container.File(PACKAGE)
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Push Helm package to registry
-func (m *HelmPackage) Push(
+func (m *Helm) Push(
 	ctx context.Context,
 	// Registry URI to push the Helm package
 	registry string,
-) *HelmPackage {
-	c := m.Base.
-		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
 		WithExec(inSh(`helm push %s`, PACKAGE, registry))
 
-	return &HelmPackage{Base: m.Base, Container: c}
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
-// Template Helm chart using package
-func (m *HelmPackage) Template(
-	ctx context.Context,
-	// Additional arguments to pass to helm template
-	// +default=""
-	additionalArgs string,
-) *HelmTemplate {
-	return template(m.Base, m.Container, PACKAGE, additionalArgs)
-}
-
-// Deploy Helm package to a cluster
-func (m *HelmPackage) Deploy(
+// Install Helm package to a cluster
+func (m *Helm) Install(
 	ctx context.Context,
 	// Additional arguments to pass to helm upgrade
 	// +default=""
@@ -251,9 +185,8 @@ func (m *HelmPackage) Deploy(
 	name string,
 	// Namespace of the Helm release
 	namespace string,
-) (*HelmPackage, error) {
-	c := m.Base.
-		WithFile(PACKAGE, m.AsFile(ctx)).
+) (*Helm, error) {
+	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
 		WithServiceBinding("kubernetes", kubernetesService).
 		WithFile("/root/.kube/config", kubeconfig).
 		WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
@@ -265,98 +198,73 @@ func (m *HelmPackage) Deploy(
 		WithExec(inSh(`helm uninstall %s --namespace %s --wait`, name, namespace)).
 		WithExec(inSh(`kubectl delete namespace %s`, namespace))
 
-	return &HelmPackage{Base: m.Base, Container: m.Container}, nil
-}
-
-type HelmTemplate struct {
-	// Current state
-	Container *dagger.Container
-	// +private
-	Base *dagger.Container
+	return m, nil
 }
 
 // Run kubectl-validate
-func (m *HelmTemplate) Validate(
+func (m *Helm) Validate(
 	ctx context.Context,
 	// Kubernetes version to check against
 	// +default="1.29"
 	kubernetesVersion string,
-) *HelmTemplate {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATE, kubernetesVersion))
-	}, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`))
-	})
+) (*Helm, error) {
+	c := m.Container.WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`)).
+		WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATEDIR, kubernetesVersion))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run pluto (from @FairwindsOps)
-func (m *HelmTemplate) Pluto(
+func (m *Helm) Pluto(
 	ctx context.Context,
 	// Kubernetes version to check against
 	// +default="1.29"
 	kubernetesVersion string,
-) *HelmTemplate {
-	return m.run(ctx, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`pluto detect-files --target-versions k8s=v%s --v 7 --directory %s`, kubernetesVersion, TEMPLATE))
-	}, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithExec(inSh(`wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.4/pluto_5.19.4_linux_amd64.tar.gz -O pluto.tgz && tar -zxvf pluto.tgz pluto && mv pluto /usr/bin/pluto && rm pluto.tgz`))
-	})
+) (*Helm, error) {
+	c := m.Container.
+		WithExec(inSh(`wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.4/pluto_5.19.4_linux_amd64.tar.gz -O pluto.tgz && tar -zxvf pluto.tgz pluto && mv pluto /usr/bin/pluto && rm pluto.tgz`)).
+		WithDirectory(WORKDIR, m.Workdir).
+		WithExec(inSh(`pluto detect-files --target-versions k8s=v%s --v 7 --directory %s`, kubernetesVersion, TEMPLATEDIR))
+
+	m.Workdir = c.Directory(WORKDIR)
+	return m, nil
 }
 
 // Run all checks
-func (m *HelmTemplate) Check(
+func (m *Helm) CheckTemplated(
 	ctx context.Context,
 	// Kubernetes version to check against
 	// +default="1.29"
 	kubernetesVersion string,
-) *HelmTemplate {
-	return m.
-		Validate(ctx, kubernetesVersion).
-		Pluto(ctx, kubernetesVersion)
-}
-
-// Package Helm chart
-func (m *HelmTemplate) Package(
-	ctx context.Context,
-) *HelmPackage {
-	b := &HelmBuild{Base: m.Base, Container: m.Container}
-	c := b.Package(ctx).Container
-
-	return &HelmPackage{Base: m.Base, Container: c}
-}
-
-func (m *HelmTemplate) run(
-	ctx context.Context,
-	execute func(*dagger.Container) *dagger.Container,
-	setup func(*dagger.Container) *dagger.Container,
-) *HelmTemplate {
-	b := m.Base
-	if setup != nil {
-		b = setup(b)
+) (*Helm, error) {
+	c, err := m.Template(ctx, "")
+	if err != nil {
+		return nil, err
 	}
-	b = b.WithDirectory(WORKDIR, m.Container.Directory(WORKDIR))
-	b = execute(b)
-	c := dag.Container().
-		WithDirectory(WORKDIR, b.Directory(WORKDIR))
-	return &HelmTemplate{
-		Base:      m.Base,
-		Container: c,
+
+	c, err = c.Validate(ctx, kubernetesVersion)
+	if err != nil {
+		return nil, err
 	}
+
+	c, err = c.Pluto(ctx, kubernetesVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	return m, nil
 }
 
-func (m *MikaelElkiaer) helm(
+func (m *MikaelElkiaer) createHelmContainer(
 	ctx context.Context,
 ) (*dagger.Container, error) {
 	c := dag.Container().
 		// TODO: Actually implement function to update the version
-		// @version policy=^3.0.0 resolved=3.19.1
-		From("docker.io/library/alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b").
-		WithExec(inSh(`echo '@community https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories`)).
-		WithExec(inSh(`apk add git go@community kubectl@community helm@community npm@community yq-go@community`))
+		// @version policy=^3.0.0 resolved=3.20.1
+		From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
+		WithExec(inSh(`apk add git go kubectl helm npm yq-go`))
 
 	if len(m.AdditionalCAs) > 0 {
 		for _, ca := range m.AdditionalCAs {
