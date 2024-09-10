@@ -13,17 +13,17 @@ const (
 
 type Helm struct {
 	//+private
+	Base *dagger.Container
+	// Latest run container, contains workdir
 	Container *dagger.Container
 	//+private
-	Module  *MikaelElkiaer
-  // Modified source directory
-	Workdir *dagger.Directory
+	Module *MikaelElkiaer
 }
 
 // Submodule for Helm
 func (m *MikaelElkiaer) Helm(
 	ctx context.Context,
-  // Helm chart path
+	// Helm chart path
 	source *dagger.Directory,
 ) (*Helm, error) {
 	c, err := m.createHelmContainer(ctx)
@@ -32,22 +32,25 @@ func (m *MikaelElkiaer) Helm(
 	}
 
 	return &Helm{
-		Container: c,
+		Base:      c,
+		Container: c.WithDirectory(WORKDIR, source),
 		Module:    m,
-		Workdir:   source,
 	}, nil
+}
+
+func (m *Helm) workdir() *dagger.Directory {
+	return m.Container.Directory(WORKDIR)
 }
 
 // Run build commands
 func (m *Helm) Build(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir, dagger.ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
+	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir(), dagger.ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
 		WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
 		WithExec(inSh(`helm dependency build`)).
-		WithDirectory(WORKDIR, m.Workdir)
+		WithDirectory(WORKDIR, m.workdir())
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -55,10 +58,9 @@ func (m *Helm) Build(
 func (m *Helm) Lint(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`helm lint .`))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -66,11 +68,10 @@ func (m *Helm) Lint(
 func (m *Helm) Schema(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`)).
-		WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`)).
+		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/helm-schema`))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -78,11 +79,10 @@ func (m *Helm) Schema(
 func (m *Helm) Docs(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest`)).
-		WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest`)).
+		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/helm-docs`))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -90,11 +90,11 @@ func (m *Helm) Docs(
 func (m *Helm) Unittest(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`)).
-		WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.
+		WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`)).
+		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/helm-unittest .`))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -130,11 +130,10 @@ func (m *Helm) Check(
 func (m *Helm) Package(
 	ctx context.Context,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`helm package .`)).
 		WithExec(inSh(`mv *.tgz %s`, PACKAGE))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -145,10 +144,9 @@ func (m *Helm) Template(
 	// +default=""
 	additionalArgs string,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`helm template %s --output-dir=%s %s`, ".", TEMPLATEDIR, additionalArgs))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -158,10 +156,9 @@ func (m *Helm) Push(
 	// Registry URI to push the Helm package
 	registry string,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`helm push %s`, PACKAGE, registry))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -171,33 +168,81 @@ func (m *Helm) Install(
 	// Additional arguments to pass to helm upgrade
 	// +default=""
 	additionalArgs string,
-	// Port to use for the Kubernetes API
-	// +default=6443
-	kubernetesPort int,
 	// Service providing Kubernetes API
-	// TODO: Make this optional and default to a built-in service
+	// +optional
 	kubernetesService *dagger.Service,
 	// kubeconfig to use for Kubernetes API access
 	// Required if kubernetesService is provided
 	// +optional
 	kubeconfig *dagger.File,
 	// Name of the Helm release
+	// +default="test"
 	name string,
 	// Namespace of the Helm release
+	// +default="testing"
 	namespace string,
+	// Timeout for Helm operations
+	// +default="300s"
+	timeout string,
 ) (*Helm, error) {
-	c := m.Container.WithDirectory(WORKDIR, m.Workdir).
-		WithServiceBinding("kubernetes", kubernetesService).
-		WithFile("/root/.kube/config", kubeconfig).
-		WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
-		WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
+	c := m.Base.WithDirectory(WORKDIR, m.workdir())
 
-	c = withDockerPullSecrets(c, name, namespace)
+	if kubernetesService == nil {
+		k3s := dag.K3S("test")
+		k3s = withAdditionalCAs(k3s, m.Module.AdditionalCAs)
+		cluster := k3s.Server()
+		cluster, err := cluster.Start(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c = c.WithFile("/root/.kube/config", k3s.Config())
+	} else {
+		c = c.WithServiceBinding("kubernetes", kubernetesService).
+			WithFile("/root/.kube/config", kubeconfig).
+			WithExec(inSh(`sed -E 's,(server: https://)(.+)(:.+)$,\1kubernetes\3,' -i /root/.kube/config`))
+	}
 
-	c = c.WithExec(inSh(`helm upgrade %s %s --atomic --install --namespace %s --wait %s`, name, PACKAGE, namespace, additionalArgs)).
-		WithExec(inSh(`helm uninstall %s --namespace %s --wait`, name, namespace)).
+	c = c.WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
+	c = withDockerPullSecrets(c, m.Module.Creds, namespace)
+	c = c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s --wait %s`, name, ".", namespace, timeout, additionalArgs)).
+		WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait`, name, namespace)).
 		WithExec(inSh(`kubectl delete namespace %s`, namespace))
 
+	m.Container = c
+	return m, nil
+}
+
+// Uninstall Helm package in a cluster
+func (m *Helm) Uninstall(
+	ctx context.Context,
+	// Additional arguments to pass to helm upgrade
+	// +default=""
+	additionalArgs string,
+	// Port to use for the Kubernetes API
+	// +default=8443
+	kubernetesPort int,
+	// Service providing Kubernetes API
+	// +optional
+	kubernetesService *dagger.Service,
+	// kubeconfig to use for Kubernetes API access
+	// Required if kubernetesService is provided
+	// +optional
+	kubeconfig *dagger.File,
+	// Name of the Helm release
+	// +default="test"
+	name string,
+	// Namespace of the Helm release
+	// +default="testing"
+	namespace string,
+) (*Helm, error) {
+	c := m.Base.WithDirectory(WORKDIR, m.workdir())
+	c = c.WithServiceBinding("kubernetes", kubernetesService).
+		WithFile("/root/.kube/config", kubeconfig).
+		WithExec(inSh(`kubectl config set-cluster minikube --server=https://kubernetes:%d`, kubernetesPort)).
+		WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait || true`, name, namespace)).
+		WithExec(inSh(`kubectl delete namespace %s || true`, namespace))
+
+	m.Container = c
 	return m, nil
 }
 
@@ -208,11 +253,11 @@ func (m *Helm) Validate(
 	// +default="1.29"
 	kubernetesVersion string,
 ) (*Helm, error) {
-	c := m.Container.WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`)).
-		WithDirectory(WORKDIR, m.Workdir).
+	m.Container = m.Base.
+		WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`)).
+		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATEDIR, kubernetesVersion))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -223,12 +268,11 @@ func (m *Helm) Pluto(
 	// +default="1.29"
 	kubernetesVersion string,
 ) (*Helm, error) {
-	c := m.Container.
+	m.Container = m.Base.
 		WithExec(inSh(`wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.4/pluto_5.19.4_linux_amd64.tar.gz -O pluto.tgz && tar -zxvf pluto.tgz pluto && mv pluto /usr/bin/pluto && rm pluto.tgz`)).
-		WithDirectory(WORKDIR, m.Workdir).
+		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`pluto detect-files --target-versions k8s=v%s --v 7 --directory %s`, kubernetesVersion, TEMPLATEDIR))
 
-	m.Workdir = c.Directory(WORKDIR)
 	return m, nil
 }
 
@@ -239,17 +283,17 @@ func (m *Helm) CheckTemplated(
 	// +default="1.29"
 	kubernetesVersion string,
 ) (*Helm, error) {
-	c, err := m.Template(ctx, "")
+	m, err := m.Template(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	c, err = c.Validate(ctx, kubernetesVersion)
+	m, err = m.Validate(ctx, kubernetesVersion)
 	if err != nil {
 		return nil, err
 	}
 
-	c, err = c.Pluto(ctx, kubernetesVersion)
+	m, err = m.Pluto(ctx, kubernetesVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -297,19 +341,36 @@ func (m *MikaelElkiaer) createHelmContainer(
 
 func withDockerPullSecrets(
 	container *dagger.Container,
-	name string,
+	creds []*Cred,
 	namespace string,
 ) *dagger.Container {
-	return container.
-		WithExec(inSh(`[ -f /root/.docker/config.json ] && cat <<EOF | kubectl apply -f -
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: %s
-  namespace: %s
-data:
-  .dockerconfigjson: $(cat /root/.docker/config.json | base64 -w 0)
-type: kubernetes.io/dockerconfigjson
-EOF`, name, namespace))
+	c := container
+	for _, cred := range creds {
+		c = c.
+			WithEnvVariable("__NAME", cred.Name).
+			WithEnvVariable("__URL", cred.Url).
+			WithEnvVariable("__USERNAME", cred.UserId).
+			WithSecretVariable("__PASSWORD", cred.UserSecret).
+			WithExec(inSh(`kubectl --namespace %s create secret docker-registry "${__NAME}" --docker-username="${__USERNAME}" --docker-password="${__PASSWORD}" --docker-email="" --docker-server="${__URL}" --dry-run=client --output=json | kubectl apply -f -`, namespace)).
+			WithoutSecretVariable("__PASSWORD").
+			WithoutEnvVariable("__USERNAME").
+			WithoutEnvVariable("__URL").
+			WithoutEnvVariable("__NAME")
+	}
+	return c
+}
+
+func withAdditionalCAs(
+	k3s *dagger.K3S,
+	cas []*dagger.Secret,
+) *dagger.K3S {
+	k3sContainer := k3s.Container()
+	for _, ca := range cas {
+		k3sContainer = k3sContainer.
+			WithMountedSecret("/tmp/additional-ca.crt", ca).
+			WithExec(inSh(`cat /tmp/additional-ca.crt >> /etc/ssl/certs/ca-certificates.crt`)).
+			WithoutMount("/tmp/additional-ca.crt")
+	}
+	k3s = k3s.WithContainer(k3sContainer)
+	return k3s
 }
