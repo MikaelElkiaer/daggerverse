@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
 	"dagger/mikael-elkiaer/internal/dagger"
+	"encoding/hex"
 	"fmt"
 )
 
 type MikaelElkiaer struct {
 	// +private
-	AdditionalCAs []*dagger.Secret
+	AdditionalCAs []*dagger.File
 	// +private
 	Creds []*Cred
 }
@@ -20,12 +23,21 @@ type Cred struct {
 }
 
 // Add an additional CA certificate
-func (m *MikaelElkiaer) WithAdditionalCA(
+func (m *MikaelElkiaer) WithCA(
 	// File containing the CA
-	file *dagger.Secret,
+	file *dagger.File,
 ) *MikaelElkiaer {
 	m.AdditionalCAs = append(m.AdditionalCAs, file)
 	return m
+}
+
+func (m *MikaelElkiaer) WithDownloadedCA(
+	ctx context.Context,
+	uri string,
+) (*MikaelElkiaer, error) {
+	cert := downloadAsFile(ctx, uri)
+	m = m.WithCA(cert)
+	return m, nil
 }
 
 // Add additional creds
@@ -55,6 +67,22 @@ func (m *MikaelElkiaer) WithCred(
 	}
 	m.Creds = append(m.Creds, cred)
 	return m, nil
+}
+
+func downloadAsFile(
+	ctx context.Context,
+	uri string,
+) *dagger.File {
+	h := sha256.New()
+	h.Write([]byte(uri))
+	hashed := h.Sum(nil)
+	name := hex.EncodeToString(hashed)
+
+	return dag.Container().
+		From("docker.io/library/alpine:3.20.1").
+		WithWorkdir("/tmp").
+		WithExec([]string{"wget", "--output-document", name, uri}).
+		File(name)
 }
 
 func inSh(

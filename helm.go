@@ -318,7 +318,7 @@ func (m *MikaelElkiaer) createHelmContainer(
 			}
 			c = c.
 				WithWorkdir("/usr/local/share/ca-certificates/").
-				WithMountedSecret(name, ca)
+				WithFile(name, ca)
 		}
 		c = c.WithExec(inSh(`update-ca-certificates`))
 	}
@@ -362,12 +362,12 @@ func withDockerPullSecrets(
 
 func withAdditionalCAs(
 	k3s *dagger.K3S,
-	cas []*dagger.Secret,
+	cas []*dagger.File,
 ) *dagger.K3S {
 	k3sContainer := k3s.Container()
 	for _, ca := range cas {
 		k3sContainer = k3sContainer.
-			WithMountedSecret("/tmp/additional-ca.crt", ca).
+			WithFile("/tmp/additional-ca.crt", ca).
 			WithExec(inSh(`cat /tmp/additional-ca.crt >> /etc/ssl/certs/ca-certificates.crt`)).
 			WithoutMount("/tmp/additional-ca.crt")
 	}
