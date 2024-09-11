@@ -369,7 +369,7 @@ func withAdditionalCAs(
 		k3sContainer = k3sContainer.
 			WithFile("/tmp/additional-ca.crt", ca).
 			WithExec(inSh(`cat /tmp/additional-ca.crt >> /etc/ssl/certs/ca-certificates.crt`)).
-			WithoutMount("/tmp/additional-ca.crt")
+			WithoutFile("/tmp/additional-ca.crt")
 	}
 	k3s = k3s.WithContainer(k3sContainer)
 	return k3s
