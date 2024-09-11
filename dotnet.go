@@ -8,58 +8,95 @@ import (
 
 type Dotnet struct {
 	// +private
+	Base *dagger.Container
+	// +private
+	Configuration string
+	// Latest run container, contains workdir
 	Container *dagger.Container
 	// +private
-	Main *MikaelElkiaer
+	Module *MikaelElkiaer
 }
 
 // .NET submodule
 func (m *MikaelElkiaer) Dotnet(
 	ctx context.Context,
+	// Configuration to use for commands
+	// +default="Release"
+	configuration string,
+	// Solution directory
+	source *dagger.Directory,
 ) *Dotnet {
 	c := dag.Container().
 		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine").
-		WithExec(inSh("apk add bash"))
+		WithExec(inSh(`apk add --no-cache bash`)).
+		WithWorkdir("/src").
+		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/"))
 
-	return &Dotnet{Container: c, Main: m}
+	return &Dotnet{Base: c, Configuration: configuration, Container: c.WithDirectory(WORKDIR, source), Module: m}
 }
 
-// Build a .NET project
-func (m *Dotnet) Build(
+// Restore dependencies
+func (m *Dotnet) Restore(
 	ctx context.Context,
-	// Directory containing the source code
-	source *dagger.Directory,
-	// Build configuration to use
-	// +default="Release"
-	configuration string,
 	// Pattern to match the csproj files
 	// +default="**/*.csproj"
 	csproj string,
 	// Pattern to match the sln files
 	// +default="*.sln"
 	sln string,
-) *DotnetBuild {
-	c := m.Container.WithWorkdir("/src").
-		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Include: []string{csproj}}).
-		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Include: []string{sln}})
+) *Dotnet {
+	m.Container = m.Base.
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR), dagger.ContainerWithDirectoryOpts{Include: []string{csproj}}).
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR), dagger.ContainerWithDirectoryOpts{Include: []string{sln}}).
+		WithExec(inSh("dotnet restore --configfile /root/nuget/nuget.config --packages .packages")).
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR))
 
-	c = c.WithExec(inSh("dotnet restore --configfile /root/nuget/nuget.config")).
-		WithDirectory(".", source, dagger.ContainerWithDirectoryOpts{Exclude: []string{"[Dd]ebug/", "[Rr]elease/"}}).
-		WithExec(inSh("dotnet build --configuration %s", configuration))
+	return m
+}
 
-	return &DotnetBuild{Container: c, Configuration: configuration}
+// Build a .NET project
+func (m *Dotnet) Build(
+	ctx context.Context,
+) *Dotnet {
+	m.Container = m.Base.
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
+		WithExec(inSh("dotnet build --configuration %s --no-restore --packages .packages", m.Configuration))
+
+	return m
+}
+
+// Run all available tests
+func (m *Dotnet) Test(
+	ctx context.Context,
+) *Dotnet {
+	m.Container = m.Base.
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
+		WithExec(inSh("dotnet test --configuration %s --no-build", m.Configuration))
+
+	return m
+}
+
+// Publish with runtime
+func (m *Dotnet) Publish(
+	ctx context.Context,
+) *Dotnet {
+	m.Container = m.Base.
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
+		WithExec(inSh("dotnet publish --configuration %s --no-build --output out /p:UseAppHost=false", m.Configuration))
+
+	return m
 }
 
 // Set up NuGet config
 func (m *Dotnet) WithNuget(
 	ctx context.Context,
-  // NuGet feed URL
+	// NuGet feed URL
 	feed string,
-  // Used as identifier in configs
+	// Used as identifier in configs
 	name string,
-  // User name, email, or similar
+	// User name, email, or similar
 	userId string,
-  // Password, token, or similar
+	// Password, token, or similar
 	userSecret *dagger.Secret,
 ) (*Dotnet, error) {
 	return m.withNuget(ctx, feed, name, userId, userSecret)
@@ -69,19 +106,19 @@ func (m *Dotnet) WithNuget(
 func (m *Dotnet) WithNugetGhcr(
 	ctx context.Context,
 	// Credential to use
-  // Defaults to the first credential
+	// Defaults to the first credential
 	// +optional
 	fromCred string,
 ) (*Dotnet, error) {
 	var cred *Cred
 	if fromCred != "" {
 		var error error
-		cred, error = getCred(m.Main.Creds, fromCred)
+		cred, error = getCred(m.Module.Creds, fromCred)
 		if error != nil {
 			return nil, fmt.Errorf("cred %s not found", fromCred)
 		}
 	} else {
-		for _, c := range m.Main.Creds {
+		for _, c := range m.Module.Creds {
 			cred = c
 			break
 		}
@@ -123,43 +160,12 @@ func (m *Dotnet) withNuget(
 	userId string,
 	userSecret *dagger.Secret,
 ) (*Dotnet, error) {
-	c := m.Container.
-		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/")).
+	m.Base = m.Base.
 		WithSecretVariable("__PASSWORD", userSecret).
 		WithEnvVariable("__USERNAME", userId).
 		WithExec(inSh("dotnet nuget add source --username $__USERNAME --password $__PASSWORD --store-password-in-clear-text --name %s %s --configfile /root/nuget/nuget.config", name, feed)).
 		WithoutSecretVariable("__PASSWORD").
 		WithoutEnvVariable("__USERNAME")
 
-	return &Dotnet{Container: c, Main: m.Main}, nil
-}
-
-type DotnetBuild struct {
-	Container *dagger.Container
-	//+private
-	Configuration string
-}
-
-// Run all available tests
-func (m *DotnetBuild) Test(
-	ctx context.Context,
-) *DotnetBuild {
-	c := m.Container.
-		WithExec(inSh("dotnet test"))
-
-	return &DotnetBuild{Container: c}
-}
-
-// Publish with runtime
-func (m *DotnetBuild) Publish(
-	ctx context.Context,
-) *dagger.Container {
-	c := m.Container.
-		WithExec(inSh("dotnet publish --configuration %s --output /app /p:UseAppHost=false --no-restore", m.Configuration))
-
-	runtime := dag.Container().
-		From("mcr.microsoft.com/dotnet/runtime:8.0-alpine").
-		WithDirectory("/app", c.Directory("/app"))
-
-	return runtime
+	return m, nil
 }
