@@ -18,6 +18,8 @@ type Helm struct {
 	Container *dagger.Container
 	//+private
 	Module *MikaelElkiaer
+	//+private
+	TargetKubernetesVersion string
 }
 
 // Submodule for Helm
@@ -25,6 +27,9 @@ func (m *MikaelElkiaer) Helm(
 	ctx context.Context,
 	// Helm chart path
 	source *dagger.Directory,
+	// Kubernetes version to check against
+	// +default="1.29"
+	targetKubernetesVersion string,
 ) (*Helm, error) {
 	c, err := m.createHelmContainer(ctx)
 	if err != nil {
@@ -32,9 +37,10 @@ func (m *MikaelElkiaer) Helm(
 	}
 
 	return &Helm{
-		Base:      c,
-		Container: c.WithDirectory(WORKDIR, source),
-		Module:    m,
+		Base:                    c,
+		Container:               c.WithDirectory(WORKDIR, source),
+		Module:                  m,
+		TargetKubernetesVersion: targetKubernetesVersion,
 	}, nil
 }
 
@@ -249,14 +255,11 @@ func (m *Helm) Uninstall(
 // Run kubectl-validate
 func (m *Helm) Validate(
 	ctx context.Context,
-	// Kubernetes version to check against
-	// +default="1.29"
-	kubernetesVersion string,
 ) (*Helm, error) {
 	m.Container = m.Base.
 		WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`)).
 		WithDirectory(WORKDIR, m.workdir()).
-		WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATEDIR, kubernetesVersion))
+		WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATEDIR, m.TargetKubernetesVersion))
 
 	return m, nil
 }
@@ -264,14 +267,11 @@ func (m *Helm) Validate(
 // Run pluto (from @FairwindsOps)
 func (m *Helm) Pluto(
 	ctx context.Context,
-	// Kubernetes version to check against
-	// +default="1.29"
-	kubernetesVersion string,
 ) (*Helm, error) {
 	m.Container = m.Base.
 		WithExec(inSh(`wget https://github.com/FairwindsOps/pluto/releases/download/v5.19.4/pluto_5.19.4_linux_amd64.tar.gz -O pluto.tgz && tar -zxvf pluto.tgz pluto && mv pluto /usr/bin/pluto && rm pluto.tgz`)).
 		WithDirectory(WORKDIR, m.workdir()).
-		WithExec(inSh(`pluto detect-files --target-versions k8s=v%s --v 7 --directory %s`, kubernetesVersion, TEMPLATEDIR))
+		WithExec(inSh(`pluto detect-files --target-versions k8s=v%s --v 7 --directory %s`, m.TargetKubernetesVersion, TEMPLATEDIR))
 
 	return m, nil
 }
@@ -279,21 +279,18 @@ func (m *Helm) Pluto(
 // Run all checks
 func (m *Helm) CheckTemplated(
 	ctx context.Context,
-	// Kubernetes version to check against
-	// +default="1.29"
-	kubernetesVersion string,
 ) (*Helm, error) {
 	m, err := m.Template(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	m, err = m.Validate(ctx, kubernetesVersion)
+	m, err = m.Validate(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	m, err = m.Pluto(ctx, kubernetesVersion)
+	m, err = m.Pluto(ctx)
 	if err != nil {
 		return nil, err
 	}
