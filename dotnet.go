@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"dagger/mikael-elkiaer/internal/dagger"
+	_ "embed"
 	"fmt"
 )
+
+//go:embed assets/dotnet.Dockerfile
+var dotnet__Dockerfile string
 
 type Dotnet struct {
 	// +private
@@ -15,6 +19,8 @@ type Dotnet struct {
 	Container *dagger.Container
 	// +private
 	Module *MikaelElkiaer
+	// +private
+	EntrypointProject string
 }
 
 // .NET submodule
@@ -23,6 +29,8 @@ func (m *MikaelElkiaer) Dotnet(
 	// Configuration to use for commands
 	// +default="Release"
 	configuration string,
+	// Name of the entrypoint project
+	entrypointProject string,
 	// Solution directory
 	source *dagger.Directory,
 ) *Dotnet {
@@ -32,7 +40,7 @@ func (m *MikaelElkiaer) Dotnet(
 		WithWorkdir("/src").
 		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/"))
 
-	return &Dotnet{Base: c, Configuration: configuration, Container: c.WithDirectory(WORKDIR, source), Module: m}
+	return &Dotnet{Base: c, Configuration: configuration, Container: c.WithDirectory(WORKDIR, source), Module: m, EntrypointProject: entrypointProject}
 }
 
 // Restore dependencies
@@ -82,9 +90,28 @@ func (m *Dotnet) Publish(
 ) *Dotnet {
 	m.Container = m.Base.
 		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
-		WithExec(inSh("dotnet publish --configuration %s --no-build --output out /p:UseAppHost=false", m.Configuration))
+		WithWorkdir(m.EntrypointProject).
+		WithExec(inSh("dotnet publish --configuration %s --no-build --output ../app /p:UseAppHost=false", m.Configuration))
 
 	return m
+}
+
+// Build container with runtime
+func (m *Dotnet) BuildContainer(
+	ctx context.Context,
+) *dagger.Container {
+	c := dag.Container().
+		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
+		WithWorkdir(WORKDIR).
+		WithNewFile("Dockerfile", dotnet__Dockerfile).
+		Directory("/src").
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			BuildArgs: []dagger.BuildArg{
+				{Name: "PROJECT_NAME", Value: m.EntrypointProject},
+			}},
+		)
+
+	return c
 }
 
 // Set up NuGet config
