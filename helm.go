@@ -97,9 +97,9 @@ func (m *Helm) Unittest(
 	ctx context.Context,
 ) (*Helm, error) {
 	m.Container = m.Base.
-		WithExec(inSh(`git clone https://github.com/mikaelelkiaer/helm-unittest.git --depth=1 /tmp/helm-unittest && cd /tmp/helm-unittest/cmd/helm-unittest && go install`)).
+		WithExec(inSh(`helm plugin install https://github.com/helm-unittest/helm-unittest.git`)).
 		WithDirectory(WORKDIR, m.workdir()).
-		WithExec(inSh(`/root/go/bin/helm-unittest .`))
+		WithExec(inSh(`helm unittest .`))
 
 	return m, nil
 }
