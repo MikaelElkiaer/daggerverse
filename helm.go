@@ -187,6 +187,12 @@ func (m *Helm) Install(
 	// Namespace of the Helm release
 	// +default="testing"
 	namespace string,
+	// Containers to load into the cluster
+	// +optional
+	preloadContainers []*dagger.Container,
+	// Tarball to load into the cluster
+	// +optional
+	preloadTarball *dagger.File,
 	// Timeout for Helm operations
 	// +default="300s"
 	timeout string,
@@ -196,6 +202,8 @@ func (m *Helm) Install(
 	if kubernetesService == nil {
 		k3s := dag.K3S("test")
 		k3s = withAdditionalCAs(k3s, m.Module.AdditionalCAs)
+		k3s = withPreloadContainers(k3s, preloadContainers)
+		k3s = withPreloadTarball(k3s, preloadTarball)
 		cluster := k3s.Server()
 		cluster, err := cluster.Start(ctx)
 		if err != nil {
@@ -367,6 +375,30 @@ func withAdditionalCAs(
 			WithFile("/tmp/additional-ca.crt", ca).
 			WithExec(inSh(`cat /tmp/additional-ca.crt >> /etc/ssl/certs/ca-certificates.crt`)).
 			WithoutFile("/tmp/additional-ca.crt")
+	}
+	k3s = k3s.WithContainer(k3sContainer)
+	return k3s
+}
+
+func withPreloadContainers(
+	k3s *dagger.K3S,
+	preloads []*dagger.Container,
+) *dagger.K3S {
+	k3sContainer := k3s.Container()
+	for _, preload := range preloads {
+		k3sContainer = k3sContainer.WithExec(inSh(`ctr --namespace k8s.io image import %s`, preload.AsTarball()))
+	}
+	k3s = k3s.WithContainer(k3sContainer)
+	return k3s
+}
+
+func withPreloadTarball(
+	k3s *dagger.K3S,
+	tarball *dagger.File,
+) *dagger.K3S {
+	k3sContainer := k3s.Container()
+	if tarball != nil {
+		k3sContainer = k3sContainer.WithExec(inSh(`ctr --namespace k8s.io image import %s`, tarball))
 	}
 	k3s = k3s.WithContainer(k3sContainer)
 	return k3s
