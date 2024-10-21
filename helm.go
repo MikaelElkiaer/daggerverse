@@ -174,6 +174,9 @@ func (m *Helm) Install(
 	// Additional arguments to pass to helm upgrade
 	// +default=""
 	additionalArgs string,
+	// Launch terminal for debugging
+	// +default=false
+	debugTerminal bool,
 	// Service providing Kubernetes API
 	// +optional
 	kubernetesService *dagger.Service,
@@ -216,11 +219,21 @@ func (m *Helm) Install(
 			WithExec(inSh(`sed -E 's,(server: https://)(.+)(:.+)$,\1kubernetes\3,' -i /root/.kube/config`))
 	}
 
+	waitString := ""
+	if !debugTerminal {
+		waitString = "--wait"
+	}
+
 	c = c.WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
 	c = withDockerPullSecrets(c, m.Module.Creds, namespace)
-	c = c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s --wait %s`, name, ".", namespace, timeout, additionalArgs)).
-		WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait`, name, namespace)).
-		WithExec(inSh(`kubectl delete namespace %s`, namespace))
+	c = c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s %s %s`, name, ".", namespace, timeout, waitString, additionalArgs))
+
+	if debugTerminal {
+		c = c.Terminal(dagger.ContainerTerminalOpts{Cmd: []string{"bash"}})
+	} else {
+		c = c.WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait`, name, namespace)).
+			WithExec(inSh(`kubectl delete namespace %s`, namespace))
+	}
 
 	m.Container = c
 	return m, nil
