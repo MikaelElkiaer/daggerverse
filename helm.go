@@ -229,7 +229,7 @@ func (m *Helm) Install(
 	c = c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s %s %s`, name, ".", namespace, timeout, waitString, additionalArgs))
 
 	if debugTerminal {
-		c = c.Terminal(dagger.ContainerTerminalOpts{Cmd: []string{"bash"}})
+		c = c.Terminal()
 	} else {
 		c = c.WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait`, name, namespace)).
 			WithExec(inSh(`kubectl delete namespace %s`, namespace))
