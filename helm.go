@@ -219,17 +219,17 @@ func (m *Helm) Install(
 			WithExec(inSh(`sed -E 's,(server: https://)(.+)(:.+)$,\1kubernetes\3,' -i /root/.kube/config`))
 	}
 
-	waitString := ""
-	if !debugTerminal {
-		waitString = "--wait"
-	}
-
 	c = c.WithExec(inSh(`kubectl create namespace %s --dry-run=client --output=json | kubectl apply -f -`, namespace))
 	c = withDockerPullSecrets(c, m.Module.Creds, namespace)
-	c = c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s %s %s`, name, ".", namespace, timeout, waitString, additionalArgs))
+	c, err := c.WithExec(inSh(`helm upgrade %s %s --debug --install --namespace=%s --timeout=%s --wait %s`, name, ".", namespace, timeout, additionalArgs)).
+		Sync(ctx)
 
-	if debugTerminal {
-		c = c.Terminal()
+	if err != nil {
+		if debugTerminal {
+			c = c.Terminal()
+		} else {
+			return nil, err
+		}
 	} else {
 		c = c.WithExec(inSh(`helm uninstall %s --debug --namespace %s --wait`, name, namespace)).
 			WithExec(inSh(`kubectl delete namespace %s`, namespace))
