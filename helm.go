@@ -326,7 +326,7 @@ func (m *MikaelElkiaer) createHelmContainer(
 		// TODO: Actually implement function to update the version
 		// @version policy=^3.0.0 resolved=3.20.1
 		From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
-		WithExec(inSh(`apk add git go kubectl helm npm yq-go`))
+		WithExec(inSh(`apk add git go kubectl k9s helm npm yq-go`))
 
 	if len(m.AdditionalCAs) > 0 {
 		for _, ca := range m.AdditionalCAs {
