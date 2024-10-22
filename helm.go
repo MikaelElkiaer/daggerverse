@@ -399,7 +399,10 @@ func withPreloadContainers(
 ) *dagger.K3S {
 	k3sContainer := k3s.Container()
 	for _, preload := range preloads {
-		k3sContainer = k3sContainer.WithExec(inSh(`ctr --namespace k8s.io image import %s`, preload.AsTarball()))
+		k3sContainer = k3sContainer.
+			WithFile("/tmp/image.tar", preload.AsTarball()).
+			WithExec(inSh(`ctr --namespace k8s.io image import /tmp/image.tar`)).
+			WithoutFile("/tmp/image.tar")
 	}
 	k3s = k3s.WithContainer(k3sContainer)
 	return k3s
