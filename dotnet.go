@@ -99,6 +99,9 @@ func (m *Dotnet) Publish(
 // Build container with runtime
 func (m *Dotnet) BuildContainer(
 	ctx context.Context,
+	// Tag to use as image name
+	// +default=""
+	tag string,
 ) *dagger.Container {
 	c := dag.Container().
 		WithDirectory(WORKDIR, m.Container.Directory(WORKDIR)).
@@ -110,6 +113,10 @@ func (m *Dotnet) BuildContainer(
 				{Name: "PROJECT_NAME", Value: m.EntrypointProject},
 			}},
 		)
+
+	if tag != "" {
+		c = c.WithAnnotation("io.containerd.image.name", tag)
+	}
 
 	return c
 }
