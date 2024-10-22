@@ -55,7 +55,7 @@ func (m *Helm) Build(
 	m.Container = m.Base.WithDirectory(WORKDIR, m.workdir(), dagger.ContainerWithDirectoryOpts{Include: []string{"Chart.lock", "Chart.yaml"}}).
 		WithExec(inSh(`touch Chart.lock && yq --indent 0 '.dependencies | map(select(.repository | test("^https?://")) | ["helm", "repo", "add", .name, .repository] | join(" ")) | .[]' ./Chart.lock | sh --;`)).
 		WithExec(inSh(`helm dependency build`)).
-		WithDirectory(WORKDIR, m.workdir())
+		WithDirectory(WORKDIR, m.workdir(), dagger.ContainerWithDirectoryOpts{Exclude: []string{"charts"}})
 
 	return m, nil
 }
