@@ -193,9 +193,6 @@ func (m *Helm) Install(
 	// Containers to load into the cluster
 	// +optional
 	preloadContainers []*dagger.Container,
-	// Tarball to load into the cluster
-	// +optional
-	preloadTarball *dagger.File,
 	// Timeout for Helm operations
 	// +default="300s"
 	timeout string,
@@ -204,11 +201,13 @@ func (m *Helm) Install(
 
 	if kubernetesService == nil {
 		k3s := dag.K3S("test")
+		k3s, err := withRegistry(ctx, k3s, preloadContainers)
+		if err != nil {
+			return nil, err
+		}
 		k3s = withAdditionalCAs(k3s, m.Module.AdditionalCAs)
-		k3s = withPreloadContainers(k3s, preloadContainers)
-		k3s = withPreloadTarball(k3s, preloadTarball)
 		cluster := k3s.Server()
-		cluster, err := cluster.Start(ctx)
+		cluster, err = cluster.Start(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -393,29 +392,39 @@ func withAdditionalCAs(
 	return k3s
 }
 
-func withPreloadContainers(
+func withRegistry(
+	ctx context.Context,
 	k3s *dagger.K3S,
-	preloads []*dagger.Container,
-) *dagger.K3S {
-	k3sContainer := k3s.Container()
-	for _, preload := range preloads {
-		k3sContainer = k3sContainer.
-			WithFile("/tmp/image.tar", preload.AsTarball()).
-			WithExec(inSh(`ctr --namespace k8s.io image import /tmp/image.tar`)).
-			WithoutFile("/tmp/image.tar")
-	}
-	k3s = k3s.WithContainer(k3sContainer)
-	return k3s
-}
+	containers []*dagger.Container,
+) (*dagger.K3S, error) {
+	registry := dag.Container().From("registry:2.8").
+		WithExposedPort(5000).AsService()
 
-func withPreloadTarball(
-	k3s *dagger.K3S,
-	tarball *dagger.File,
-) *dagger.K3S {
-	k3sContainer := k3s.Container()
-	if tarball != nil {
-		k3sContainer = k3sContainer.WithExec(inSh(`ctr --namespace k8s.io image import %s`, tarball))
+	for _, container := range containers {
+		_, err := dag.Container().From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
+			WithExec(inSh(`apk --no-cache add skopeo yq-go`)).
+			WithWorkdir("/tmp").
+			WithServiceBinding("registry", registry).
+			WithMountedFile("/tmp/image.tar", container.AsTarball()).
+			// TODO: Handle more tags
+			WithExec(inSh(`TAG_OLD="$(tar xvf image.tar manifest.json --to-stdout | tail -1 | yq -p json '.[0].RepoTags[0]')"
+TAG_NEW="$(echo $TAG_OLD | sed -E 's,([^/]*)(.*),registry:5000\2,')"
+skopeo copy --all --additional-tag="$TAG_OLD" --dest-tls-verify=false docker-archive:image.tar "docker://$TAG_NEW"`)).
+			Sync(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	k3s = k3s.WithContainer(k3sContainer)
-	return k3s
+
+	k3sContainer := k3s.Container().
+		WithExec(inSh(`
+cat <<EOF > /etc/rancher/k3s/registries.yaml
+mirrors:
+  "*":
+    endpoint:
+      - "http://registry:5000"
+EOF`)).
+		WithServiceBinding("registry", registry)
+
+	return k3s.WithContainer(k3sContainer), nil
 }
