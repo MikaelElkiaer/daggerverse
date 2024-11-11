@@ -74,7 +74,9 @@ func (m *Helm) Lint(
 func (m *Helm) Schema(
 	ctx context.Context,
 ) (*Helm, error) {
-	m.Container = m.Base.WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@latest`)).
+	// TODO: Actually implement function to update the version
+	// @version policy=~0.13.0-0 resolved=0.13.1-2
+	m.Container = m.Base.WithExec(inSh(`go install github.com/dadav/helm-schema/cmd/helm-schema@7da61f883f9d1e7882ff5677ebde1100392ebed2`)).
 		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/helm-schema`))
 
@@ -85,7 +87,9 @@ func (m *Helm) Schema(
 func (m *Helm) Docs(
 	ctx context.Context,
 ) (*Helm, error) {
-	m.Container = m.Base.WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest`)).
+	// TODO: Actually implement function to update the version
+	// @version policy=~v1.0.0 resolved=v1.14.2
+	m.Container = m.Base.WithExec(inSh(`go install github.com/norwoodj/helm-docs/cmd/helm-docs@37d3055fece566105cf8cff7c17b7b2355a01677`)).
 		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/helm-docs`))
 
@@ -97,7 +101,7 @@ func (m *Helm) Unittest(
 	ctx context.Context,
 ) (*Helm, error) {
 	m.Container = m.Base.
-		WithExec(inSh(`helm plugin install https://github.com/helm-unittest/helm-unittest.git`)).
+		WithExec(inSh(`helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v0.6.3`)).
 		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`helm unittest .`))
 
@@ -277,7 +281,9 @@ func (m *Helm) Validate(
 	ctx context.Context,
 ) (*Helm, error) {
 	m.Container = m.Base.
-		WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@v0.0.4`)).
+		// TODO: Actually implement function to update the version
+		// @version policy=~0.4.0 resolved=0.4.0
+		WithExec(inSh(`go install sigs.k8s.io/kubectl-validate@fac15fd6e47976df8585fe18a73246d78642eab9`)).
 		WithDirectory(WORKDIR, m.workdir()).
 		WithExec(inSh(`/root/go/bin/kubectl-validate %s --version %s`, TEMPLATEDIR, m.TargetKubernetesVersion))
 
@@ -323,7 +329,7 @@ func (m *MikaelElkiaer) createHelmContainer(
 ) (*dagger.Container, error) {
 	c := dag.Container().
 		// TODO: Actually implement function to update the version
-		// @version policy=^3.0.0 resolved=3.20.1
+		// @version policy=^3.0.0 resolved=3.20.3
 		From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
 		WithExec(inSh(`apk add git go kubectl k9s helm npm yq-go`))
 
@@ -397,10 +403,14 @@ func withRegistry(
 	k3s *dagger.K3S,
 	containers []*dagger.Container,
 ) (*dagger.K3S, error) {
-	registry := dag.Container().From("registry:2.8").
+	// TODO: Actually implement function to update the version
+	// @version policy=^2.0.0 resolved=2.8.3
+	registry := dag.Container().From("registry:sha256:ac0192b549007e22998eb74e8d8488dcfe70f1489520c3b144a6047ac5efbe90").
 		WithExposedPort(5000).AsService()
 
 	for _, container := range containers {
+		// TODO: Actually implement function to update the version
+		// @version policy=^3.0.0 resolved=3.20.3
 		_, err := dag.Container().From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
 			WithExec(inSh(`apk --no-cache add skopeo yq-go`)).
 			WithWorkdir("/tmp").
