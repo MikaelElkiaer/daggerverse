@@ -9,7 +9,7 @@
       "datasourceTemplate": "docker",
       "fileMatch": ["^.*.go$"],
       "matchStrings": [
-        "From(\"(?<depName>(.*)):(?<currentValue>.*)@(?<currentDigest>.*)\")"
+        "From\\(\"(?<depName>(.*)):(?<currentValue>.*)@(?<currentDigest>.*)\"\\)"
       ]
     }
   ],
