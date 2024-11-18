@@ -10,7 +10,8 @@
       "fileMatch": ["^.*.go$"],
       "matchStrings": [
         "From\\(\"(?<depName>(.*)):(?<currentValue>.*)(@(?<currentDigest>.*))?\"\\)"
-      ]
+      ],
+      "autoReplaceStringTemplate": "From(\"{{{depName}}}:{{{newValue}}}@{{{newDigest}}}\")"
     }
   ],
   "gomod": {
