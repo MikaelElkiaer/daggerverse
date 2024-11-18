@@ -25,7 +25,7 @@ func (m *Testing) Interrupt(
 	ctx context.Context,
 ) (string, error) {
 	return dag.Container().
-		From("docker.io/library/alpine:3.19.1").
+		From("docker.io/library/alpine:3.20.3").
 		WithNewFile("/interrupt.sh", interrupt__sh).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithExec([]string{"sh", "/interrupt.sh"}).
