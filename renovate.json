@@ -3,6 +3,16 @@
   "extends": [
     "config:recommended"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "datasourceTemplate": "docker",
+      "fileMatch": ["^.*.go$"],
+      "matchStrings": [
+        "From(\"(?<depName>(.*)):(?<currentValue>.*)@(?<currentDigest>.*)\")"
+      ]
+    }
+  ],
   "gomod": {
     "enabled": false
   }
