@@ -328,9 +328,7 @@ func (m *MikaelElkiaer) createHelmContainer(
 	ctx context.Context,
 ) (*dagger.Container, error) {
 	c := dag.Container().
-		// TODO: Actually implement function to update the version
-		// @version policy=^3.0.0 resolved=3.20.3
-		From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
+		From("docker.io/library/alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a").
 		WithExec(inSh(`apk add git go kubectl k9s helm npm yq-go`))
 
 	if len(m.AdditionalCAs) > 0 {
@@ -403,15 +401,13 @@ func withRegistry(
 	k3s *dagger.K3S,
 	containers []*dagger.Container,
 ) (*dagger.K3S, error) {
-	// TODO: Actually implement function to update the version
-	// @version policy=^2.0.0 resolved=2.8.3
-	registry := dag.Container().From("registry:sha256:ac0192b549007e22998eb74e8d8488dcfe70f1489520c3b144a6047ac5efbe90").
+	registry := dag.Container().
+		From("docker.io/library/registry:2.8.3@sha256:543dade69668e02e5768d7ea2b0aa4fae6aa7384c9a5a8dbecc2be5136079ddb").
 		WithExposedPort(5000).AsService()
 
 	for _, container := range containers {
-		// TODO: Actually implement function to update the version
-		// @version policy=^3.0.0 resolved=3.20.3
-		_, err := dag.Container().From("docker.io/library/alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
+		_, err := dag.Container().
+      From("docker.io/library/alpine:3.20.3@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d").
 			WithExec(inSh(`apk --no-cache add skopeo yq-go`)).
 			WithWorkdir("/tmp").
 			WithServiceBinding("registry", registry).

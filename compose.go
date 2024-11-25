@@ -42,7 +42,7 @@ func (m *MikaelElkiaer) compose(
 	ctx context.Context,
 ) *dagger.Container {
 	c := dag.Container().
-		From("docker.io/library/alpine:3.20.3").
+		From("docker.io/library/alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a").
 		WithExec(inSh("apk add bash=5.2.21-r0 npm=10.2.5-r0 skopeo=1.14.0-r2 yq=4.35.2-r3")).
 		WithExec(inSh("npm install --global semver@7.6.2"))
 
