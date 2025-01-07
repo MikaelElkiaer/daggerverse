@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine@sha256:a0062262fd674573be2314890006acadfd233fd7fdf89b3a5f44694b7632b29e
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine@sha256:232b1c034f3d16dd241050d4eb882f648b31fdfb7693244f089490ae13870d09
 RUN apk add bash
 WORKDIR /app
 ARG PROJECT_NAME
