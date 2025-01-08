@@ -35,7 +35,7 @@ func (m *MikaelElkiaer) Dotnet(
 	source *dagger.Directory,
 ) *Dotnet {
 	c := dag.Container().
-		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine@sha256:7ae1a9b4a2624fdaef1932ceddea8094e008cf345cba517a79778aba7152cb45").
+		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine@sha256:8e5832fb40462f8dd93f317d204d6f65d58b100a77884d0b132ad982aa65e5b5").
 		WithExec(inSh(`apk add --no-cache bash`)).
 		WithWorkdir("/src").
 		WithExec(inSh("dotnet new nugetconfig --output /root/nuget/"))
