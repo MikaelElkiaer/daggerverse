@@ -13,7 +13,7 @@ if ! [ -s "$CERT_PATH" ]; then
 fi
 
 ID="$(docker ps --quiet --filter name=dagger-engine)"
-docker exec "$ID" rm /usr/local/share/ca-certificates/custom_root.crt
+docker exec "$ID" rm -f /usr/local/share/ca-certificates/custom_root.crt
 docker cp "$CERT_PATH" "$ID:/usr/local/share/ca-certificates/custom_root.crt"
 docker exec "$ID" update-ca-certificates
 docker restart "$ID"
