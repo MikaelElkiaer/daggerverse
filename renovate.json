@@ -7,7 +7,9 @@
     {
       "customType": "regex",
       "datasourceTemplate": "docker",
-      "fileMatch": ["^.*.go$"],
+      "managerFilePatterns": [
+        "/^.*.go$/"
+      ],
       "matchStrings": [
         "From\\(\"(?<depName>([^:]*)):(?<currentValue>[^@]*)(@(?<currentDigest>.*))?\"\\)"
       ],
