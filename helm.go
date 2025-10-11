@@ -402,7 +402,7 @@ func withRegistry(
 	containers []*dagger.Container,
 ) (*dagger.K3S, error) {
 	registry := dag.Container().
-		From("docker.io/library/registry:3.0.0@sha256:491add1c62291ba36613f60a5d61d22a13f23839e69d3c3a25da114da327a7e6").
+		From("docker.io/library/registry:3.0.0@sha256:cd92709b4191c5779cd7215ccd695db6c54652e7a62843197e367427efb84d0e").
 		WithExposedPort(5000).AsService()
 
 	for _, container := range containers {
