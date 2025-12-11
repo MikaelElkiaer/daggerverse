@@ -1,7 +1,9 @@
 {
   "name": "MikaelElkiaer",
-  "engineVersion": "v0.14.0",
-  "sdk": "go",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "k3s",
@@ -9,5 +11,5 @@
       "pin": "ce8fe35d309bdb29f9983f7d90ea518e724534fe"
     }
   ],
-  "source": "."
+  "disableDefaultFunctionCaching": true
 }
