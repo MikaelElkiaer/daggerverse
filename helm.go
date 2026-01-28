@@ -328,7 +328,7 @@ func (m *MikaelElkiaer) createHelmContainer(
 	ctx context.Context,
 ) (*dagger.Container, error) {
 	c := dag.Container().
-		From("docker.io/library/alpine:3.23.3@sha256:eb37f58646a901dc7727cf448cae36daaefaba79de33b5058dab79aa4c04aefb").
+		From("docker.io/library/alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659").
 		WithExec(inSh(`apk add git go kubectl k9s helm npm yq-go`))
 
 	if len(m.AdditionalCAs) > 0 {
@@ -407,7 +407,7 @@ func withRegistry(
 
 	for _, container := range containers {
 		_, err := dag.Container().
-      From("docker.io/library/alpine:3.23.3@sha256:eb37f58646a901dc7727cf448cae36daaefaba79de33b5058dab79aa4c04aefb").
+      From("docker.io/library/alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659").
 			WithExec(inSh(`apk --no-cache add skopeo yq-go`)).
 			WithWorkdir("/tmp").
 			WithServiceBinding("registry", registry).
